@@ -4,8 +4,8 @@
  * The full app leaves the factory with Shruti and Mirage already inside it, so
  * there is no voice/vision download in the field. This screen explains the
  * actual product, asks for a fresh GPS fix, downloads the local map, and copies
- * the included models into app storage. Woof is deliberately not here: it is a
- * 1.56 GB optional download from Prepare.
+ * the included models into app storage. Bonsai is deliberately not here: it is a
+ * 521 MB optional download from Prepare.
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -41,7 +41,7 @@ const SLIDES = [
   },
   {
     title: 'Ready before the network goes.',
-    body: 'Shruti and Mirage are already in this app. Add the larger Woof model later if you want longer, plainer answers.',
+    body: 'Shruti and Mirage are already in this app. Add the Bonsai text model later if you want answers in your own words.',
     preview: 'ready' as const,
   },
 ] as const;
@@ -214,10 +214,10 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
               </View>
             ) : null}
 
-            <Text style={styles.woofNote}>
+            <Text style={styles.note}>
               {KINDMINDS_LITE
                 ? 'This build uses approved records without on-device models.'
-                : 'Woof 2B, the larger text model, can be downloaded later from Prepare.'}
+                : 'Bonsai 2 2B, the text model, can be downloaded later from Prepare.'}
             </Text>
 
             {setup === 'running' || setup === 'done' ? (
@@ -420,7 +420,7 @@ function SlidePreview({ kind }: { kind: 'map' | 'chat' | 'assist' | 'ready' }) {
       <ReadyLine title="Shruti" detail="Voice input" />
       <ReadyLine title="Mirage" detail="Photo descriptions" />
       <View style={styles.readyDivider} />
-      <Text style={styles.readyFootnote}>Woof 2B is optional and can be added later.</Text>
+      <Text style={styles.readyFootnote}>Bonsai is optional and can be added later.</Text>
     </View>
   );
 }
@@ -522,7 +522,7 @@ const styles = StyleSheet.create({
   includedIcon: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: palette.raised, alignItems: 'center', justifyContent: 'center' },
   includedGlyph: { color: palette.accent, fontSize: 12, fontWeight: '700' },
   includedTag: { color: palette.safe, fontSize: 11, fontWeight: '700' },
-  woofNote: { color: palette.inkMuted, fontSize: 11, lineHeight: 16, borderTopWidth: 1, borderTopColor: palette.line, paddingTop: space.sm },
+  note: { color: palette.inkMuted, fontSize: 11, lineHeight: 16, borderTopWidth: 1, borderTopColor: palette.line, paddingTop: space.sm },
   liveStatus: { gap: space.xs, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: palette.line },
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statusLabel: { color: palette.ink, fontSize: 12, fontWeight: '600' },

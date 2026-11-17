@@ -3,7 +3,7 @@
  *
  * The assistant is a conversation, not a dashboard. It routes everyday needs to
  * the app's real tools (breathing, SOS, map, mesh, preparedness) and answers
- * safety questions only from the approved offline records. Woof can rephrase a
+ * safety questions only from the approved offline records. Bonsai can rephrase a
  * retrieved record on request; it is never the source of the steps.
  */
 

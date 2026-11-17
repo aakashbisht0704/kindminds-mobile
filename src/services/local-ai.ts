@@ -1,7 +1,7 @@
 /**
  * Process-wide access to the native model runtimes.
  *
- * - Woof 2B: GGUF through llama.rn (text rephrasing)
+ * - Bonsai 2 2B: GGUF through llama.rn (question answering from the records)
  * - Shruti: `.cact` through the native Cactus 4.1 bridge (speech-to-text)
  * - Mirage: `.cact` through the native Cactus 4.1 bridge (vision)
  *
@@ -75,8 +75,6 @@ export async function loadVisionModel(): Promise<LoadedVisionModel | null> {
   return { backend, model };
 }
 
-let selfTestRan = false;
-
 /** How long the text model may sit idle in RAM before it is released. */
 const TEXT_MODEL_IDLE_UNLOAD_MS = 5 * 60 * 1000;
 
@@ -114,18 +112,6 @@ export async function assistQuery(
   } catch (error) {
     console.warn('[KindMinds] Bonsai could not start', error);
     loaded = null;
-  }
-  if (!selfTestRan && loaded) {
-    selfTestRan = true;
-    const context = (loaded.backend as unknown as { context?: unknown }).context;
-    if (context) {
-      const { runSelfTest } = require('./debug-self-test') as typeof import('./debug-self-test');
-      try {
-        await runSelfTest(context as never, loaded.model.uri);
-      } catch (error) {
-        console.warn('[selftest] harness failed', error);
-      }
-    }
   }
   armIdleUnload();
   const outcome = await runAssistant(loaded?.backend ?? null, { query, options });

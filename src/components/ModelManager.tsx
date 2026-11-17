@@ -1,7 +1,7 @@
 /**
  * On-device model status.
  *
- * Shruti and Mirage are part of the full install. Woof is the only large,
+ * Shruti and Mirage are part of the full install. Bonsai is the only large,
  * optional download; this is the one place a person should have to think about
  * model sizes. No model leaves the phone.
  */
@@ -24,8 +24,8 @@ export function ModelManager() {
   const [notice, setNotice] = useState<string | null>(null);
   const [includedProgress, setIncludedProgress] = useState(0);
   const [installingIncluded, setInstallingIncluded] = useState(false);
-  const [woofDownloading, setWoofDownloading] = useState(false);
-  const [woofProgress, setWoofProgress] = useState(0);
+  const [textDownloading, setTextDownloading] = useState(false);
+  const [textProgress, setTextProgress] = useState(0);
   const [verifying, setVerifying] = useState(false);
   const [verifyProgress, setVerifyProgress] = useState(0);
 
@@ -46,16 +46,16 @@ export function ModelManager() {
   }
 
   async function installTextModel() {
-    if (woofDownloading) return;
-    setWoofDownloading(true);
-    setWoofProgress(0);
+    if (textDownloading) return;
+    setTextDownloading(true);
+    setTextProgress(0);
     setNotice(null);
     try {
       await downloadModel(
         'text',
         MODEL_URLS.text.url,
         MODEL_URLS.text.name,
-        setWoofProgress,
+        setTextProgress,
         MODEL_URLS.text.bytes,
         MODEL_URLS.text.sha256,
         (fraction) => {
@@ -75,7 +75,7 @@ export function ModelManager() {
         }`,
       );
     } finally {
-      setWoofDownloading(false);
+      setTextDownloading(false);
       setVerifying(false);
     }
   }
@@ -103,7 +103,7 @@ export function ModelManager() {
         <Card>
           <AppText variant="body" color={palette.inkMuted}>
             This build uses approved records and wellbeing tools without local speech or vision
-            models. Install the full build to add Shruti, Mirage, and the optional Woof model.
+            models. Install the full build to add Shruti, Mirage, and the optional Bonsai text model.
           </AppText>
         </Card>
       </View>
@@ -160,21 +160,21 @@ export function ModelManager() {
         )}
       </Card>
 
-      <AppText variant="title" style={styles.woofTitle}>Bonsai 2 2B</AppText>
+      <AppText variant="title" style={styles.textTitle}>Bonsai 2 2B</AppText>
       <AppText variant="caption" color={palette.inkMuted}>
         Optional. Reads the approved records and explains or answers them in English, Hindi or
         Hinglish. It is not a doctor and cannot add advice of its own.
       </AppText>
 
       <Card style={styles.card}>
-        <View style={styles.woofHead}>
-          <View style={styles.woofCopy}>
-            <Text style={styles.woofDetail}>
+        <View style={styles.textHead}>
+          <View style={styles.textCopy}>
+            <Text style={styles.textDetail}>
               {models.text
                 ? `${models.text.name} · ${formatModelSize(models.text.sizeBytes)}`
                 : '521 MB download · Apache-2.0 · PrismML Ternary Bonsai 2'}
             </Text>
-            <Text style={styles.woofHint}>
+            <Text style={styles.textHint}>
               {models.text
                 ? 'Installed, integrity-checked and ready.'
                 : 'Download before an emergency, while you still have a connection.'}
@@ -185,23 +185,23 @@ export function ModelManager() {
           </Text>
         </View>
 
-        {woofDownloading && verifying ? (
+        {textDownloading && verifying ? (
           <ProgressBar ratio={verifyProgress} severity="safe" />
-        ) : woofDownloading ? (
-          <ProgressBar ratio={woofProgress} severity="safe" />
+        ) : textDownloading ? (
+          <ProgressBar ratio={textProgress} severity="safe" />
         ) : null}
         <ActionButton
           label={
-            woofDownloading && verifying
+            textDownloading && verifying
               ? `Checking model integrity ${Math.round(verifyProgress * 100)}%`
-              : woofDownloading
-                ? `Downloading Bonsai ${Math.round(woofProgress * 100)}%`
+              : textDownloading
+                ? `Downloading Bonsai ${Math.round(textProgress * 100)}%`
               : models.text
                 ? 'Bonsai is installed'
                 : 'Download Bonsai 2 2B'
           }
           tone={models.text ? 'soft' : 'primary'}
-          busy={woofDownloading}
+          busy={textDownloading}
           disabled={Boolean(models.text)}
           onPress={() => void installTextModel()}
         />
@@ -260,10 +260,10 @@ const styles = StyleSheet.create({
   rowSize: { ...type.readout, fontSize: 12, paddingTop: 2 },
   installedNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
   installedText: { color: palette.safe, fontSize: 12, fontWeight: '600' },
-  woofTitle: { marginTop: space.md },
-  woofHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
-  woofCopy: { flex: 1, gap: 3 },
-  woofDetail: { color: palette.ink, fontSize: 14, fontWeight: '600', lineHeight: 20 },
-  woofHint: { color: palette.inkMuted, fontSize: 12, lineHeight: 17 },
+  textTitle: { marginTop: space.md },
+  textHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
+  textCopy: { flex: 1, gap: 3 },
+  textDetail: { color: palette.ink, fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  textHint: { color: palette.inkMuted, fontSize: 12, lineHeight: 17 },
   status: { fontSize: 12, fontWeight: '700', paddingTop: 1 },
 });

@@ -2,7 +2,7 @@
  * First-launch downloads.
  *
  * Models are large, so they are downloaded once during onboarding and kept in
- * the app's private storage. Woof is 1.56 GB: a phone on a mobile connection
+ * the app's private storage. Bonsai is 546,689,504 bytes: a phone on a mobile connection
  * will lose the socket at least once on the way, so the downloader keeps the
  * partial file, asks the server for the rest with an HTTP Range request, and
  * only swaps the result into place when the file is complete. An interrupted
@@ -15,6 +15,7 @@ import { fetch as streamingFetch } from 'expo/fetch';
 import { sha256 } from '@noble/hashes/sha256';
 
 import { modelFile, registerModel, type ModelKind } from './model-pack';
+import { TEXT_MODEL, VISION_MODEL, VOICE_MODEL } from '../core/ai/model-facts';
 
 const USER_AGENT = 'KindMinds/0.1 (offline disaster kit; on-device models)';
 
@@ -282,22 +283,13 @@ export async function downloadModel(
   return file;
 }
 
+/**
+ * The download list, derived from the audited model facts so the size and
+ * digest the downloader enforces are the same numbers the licence screen
+ * quotes. Nothing here is a second copy.
+ */
 export const MODEL_URLS = {
-  text: {
-    name: 'Ternary-Bonsai-2-2B-Q2_0.gguf',
-    url: 'https://huggingface.co/prism-ml/Ternary-Bonsai-2-2B-gguf/resolve/main/Ternary-Bonsai-2-2B-Q2_0.gguf',
-    bytes: 546_689_504,
-    // From the publisher's SHA256SUMS file in the same repository.
-    sha256: 'c2893fa6f951daee8b7263d5f49b455e57989ef56417a22125b03566dc560650',
-  },
-  voice: {
-    name: 'shruti.cact',
-    url: 'https://huggingface.co/udgamlabs/Shruti/resolve/main/shruti.cact',
-    bytes: 29_546_527,
-  },
-  vision: {
-    name: 'mirage.cact',
-    url: 'https://huggingface.co/Cactus-Compute/mirage/resolve/main/mirage.cact',
-    bytes: 21_611_043,
-  },
+  text: TEXT_MODEL,
+  voice: VOICE_MODEL,
+  vision: VISION_MODEL,
 } as const;

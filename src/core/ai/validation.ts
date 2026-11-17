@@ -40,6 +40,11 @@ const MARKERS: readonly RegExp[] = [
   /<\|im_(?:start|end)\|>/i,
   /<\s*\/?\s*(?:think|thinking|reasoning|analysis)\s*>/i,
   /\b(?:as an ai|i am an ai|i'm an ai|disclaimer)\b/i,
+  // Reasoning preambles this checkpoint produces when it ignores
+  // enable_thinking=false. They are rejected, never silently stripped.
+  /\bthinking process\b/i,
+  /\banaly[sz]e (?:the|the provided) (?:request|question|records)\b/i,
+  /^\s*(?:reasoning|thoughts?|analysis)\s*:/im,
   /^(?:assistant|system|user)\s*:/im,
   /^(?:note|n\.b\.|important note)\s*:/im,
 ];
@@ -79,6 +84,21 @@ const RISKY_TERMS: readonly string[] = [
 
 const WORD = /[\p{L}\p{N}]+/gu;
 const DEVANAGARI = /\p{Script=Devanagari}/u;
+
+/**
+ * A leading list marker is formatting, not a sentence and not a fact.
+ *
+ * The model enumerates short imperative steps ("1. Cool the burn.\n2. Cover...")
+ * because the prompt asks for one sentence per approved step. Counting those
+ * digits as sentence terminators doubled the sentence count and rejected
+ * otherwise perfect answers (measured: "how to treat heat stroke" and "panic
+ * attack" in the four-mode batch). The same digits would also trip the
+ * new-number check, so they are removed once, before both checks, while the
+ * text the person finally sees keeps its numbering.
+ */
+function withoutListMarkers(text: string): string {
+  return text.replace(/^[ \t]*(?:\d{1,2}[.)]|[-*•])[ \t]+/gm, '');
+}
 
 function words(text: string): string[] {
   return text.match(WORD) ?? [];
@@ -139,15 +159,23 @@ function distinctiveTerms(step: string, otherSteps: readonly string[]): string[]
   return unique.length > 0 ? unique : own;
 }
 
-function firstPosition(tokens: readonly string[], needles: readonly string[]): number {
-  let best = -1;
-  for (let index = 0; index < tokens.length; index += 1) {
+/**
+ * Where a step's evidence starts, searching forward from `from`.
+ *
+ * Searching forward matters: a later step's words often appear earlier in the
+ * answer as part of an earlier step. Recorded example: the CPR answer said
+ * "check for normal breathing" for step 2 and "rescue breaths" for step 6, and
+ * a whole-answer scan matched step 6 to the word in step 2 and reported the
+ * answer as out of order. Steps must be found in sequence, so each search
+ * starts after the previous match.
+ */
+function firstPosition(tokens: readonly string[], needles: readonly string[], from = 0): number {
+  for (let index = Math.max(0, from); index < tokens.length; index += 1) {
     if (needles.includes(tokens[index] as string)) {
-      best = index;
-      break;
+      return index;
     }
   }
-  return best;
+  return -1;
 }
 
 export type ValidateInput = {
@@ -183,8 +211,14 @@ export function validateAnswer(input: ValidateInput): ValidationOutcome {
     return { ok: false, failure: 'repetition' };
   }
 
-  const sentenceCount = sentences(cleaned).length;
-  if (sentenceCount > maxSentencesFor(mode)) {
+  // A REPHRASE must keep every step, so its sentence allowance has to scale with
+  // the record; a fixed cap would make long records impossible to pass.
+  const sentenceAllowance =
+    mode === 'REPHRASE'
+      ? Math.max(maxSentencesFor(mode), (records[0]?.steps.length ?? 0) + 2)
+      : maxSentencesFor(mode);
+  const sentenceCount = sentences(withoutListMarkers(cleaned)).length;
+  if (sentenceCount > sentenceAllowance) {
     return { ok: false, failure: 'too_many_sentences', detail: `${sentenceCount} sentences` };
   }
 
@@ -194,7 +228,7 @@ export function validateAnswer(input: ValidateInput): ValidationOutcome {
 
   const sourceText = records.map(recordText).join(' ');
   const allowedNumbers = normalizedNumbers(sourceText);
-  const usedNumbers = normalizedNumbers(cleaned);
+  const usedNumbers = normalizedNumbers(withoutListMarkers(cleaned));
   for (const value of usedNumbers) {
     if (!allowedNumbers.has(value)) {
       return { ok: false, failure: 'new_number', detail: value };
@@ -241,7 +275,7 @@ export function validateAnswer(input: ValidateInput): ValidationOutcome {
       if (!step) continue;
       const others = allStepTexts.filter((text) => text !== step.text);
       const needles = distinctiveTerms(step.text, others);
-      const position = firstPosition(answerTokens, needles);
+      const position = firstPosition(answerTokens, needles, previous + 1);
       if (position < 0) continue;
       found += 1;
       if (position <= previous) return { ok: false, failure: 'step_order', detail: step.text };

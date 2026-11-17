@@ -25,6 +25,9 @@ assets/models/*
 *.cact
 *.bin
 
+# Local llama.cpp build and downloaded model used by scripts/eval-local-model.ts
+/Temp/
+
 # Android build output and machine-specific configuration
 android/app/build/
 android/build/

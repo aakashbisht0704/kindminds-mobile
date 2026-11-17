@@ -71,7 +71,35 @@ export type AssistantOutcome =
     };
 
 /** Generation budget: short answers, and never a minute of spinning. */
-export const DEFAULT_TIMEOUT_MS = 900_000; // TEMP emulator-only, restored before delivery
+/**
+ * Deadline policy.
+ *
+ * A fixed timeout is a guess, and a wrong guess is what makes a working model
+ * look broken on a slow phone. The budget is therefore derived from the
+ * prompt size and the throughput this device actually measured on its last
+ * answer, with a floor and a cap so the card can never hang indefinitely.
+ * MIN is the product target; the first answer on unknown hardware uses
+ * CONSERVATIVE_SPEED, which is deliberately pessimistic for a 2B model on a
+ * mid-range phone.
+ */
+export const MIN_TIMEOUT_MS = 20_000;
+export const MAX_TIMEOUT_MS = 120_000;
+export const CONSERVATIVE_SPEED = { prefillTps: 25, decodeTps: 10 } as const;
+/** Rough characters-per-token for English prose; only used to size the budget. */
+const CHARS_PER_TOKEN = 4;
+
+export function estimateTimeout(
+  promptChars: number,
+  maxTokens: number,
+  measured?: { prefillTps: number; decodeTps: number } | null,
+): number {
+  const speed = measured && measured.prefillTps > 0 && measured.decodeTps > 0 ? measured : CONSERVATIVE_SPEED;
+  const promptTokens = Math.ceil(promptChars / CHARS_PER_TOKEN);
+  const seconds = promptTokens / speed.prefillTps + maxTokens / speed.decodeTps;
+  // 1.5x headroom: sampler variance and the first-token cost are real.
+  const budget = seconds * 1500;
+  return Math.round(Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, budget)));
+}
 
 /** Below this BM25 score a "match" is a coincidence, not a topic. */
 const UNSUPPORTED_SCORE = 2.6;
@@ -104,8 +132,10 @@ const STEP_QUERY = /\bstep\s*(\d{1,2})\b|\b(\d{1,2})\s*(?:st|nd|rd|th)?\s*step\b
 const CLARIFY_HINT =
   /(what does|what do you mean|meaning of|means\b|explain|simpler|simple words|in plain|matlab|iska matlab|samjha|समझा|आसान|मतलब)/i;
 
+// A SITUATION is the person describing what is happening to them, so the hints
+// cover first-person surroundings and events in progress, not just "trapped".
 const SITUATION_HINT =
-  /(there is|there's|i am trapped|i'm trapped|we are trapped|stuck|caught in|in my area|near me|nearby|someone is|someone near|surrounded|घिर गए|फंस|यहाँ|yahan|paas|trapped)/i;
+  /(there is|there's|(?:i am|i'm|we are|we're)\s+(?:on|in|at|stuck|trapped|surrounded|running out|out of|under)|stuck|caught in|in my area|near me|nearby|someone is|someone near|surrounded|(?:is|are|keep|keeps)\s+(?:rising|coming up|spreading|getting worse|shaking)|just happened|started|घिर गए|फंस|यहाँ|yahan|paas|trapped|badh raha|aag lag)/i;
 
 export function parseStepIndex(query: string): number | undefined {
   const match = STEP_QUERY.exec(query);
@@ -230,22 +260,26 @@ export async function runAssistant(
 
   if (!backend) return toFallback('no_model');
 
+  const maxTokens = maxTokensFor(mode);
+  const timeoutMs =
+    options.timeoutMs ??
+    estimateTimeout(system.length + user.length, maxTokens, backend.speed?.() ?? null);
+
   const { text, timedOut } = await generateText(backend, {
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
-    maxTokens: maxTokensFor(mode),
+    maxTokens,
     temperature: 0.2,
     topP: 0.85,
     topK: 20,
     repeatPenalty: 1.1,
     stopSequences: stopSequences(),
-    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    timeoutMs,
     onToken: options.onToken,
   });
 
-  console.warn('[temp-raw]', JSON.stringify(text));
   if (timedOut) return toFallback('timeout');
 
   const validated = validateAnswer({ mode, raw: text, records: sources, language, stepIndex });

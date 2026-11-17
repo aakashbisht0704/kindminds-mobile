@@ -1,38 +1,71 @@
 /**
- * Developer tool: run the real assistant pipeline against a local llama.cpp
- * binary, so prompt and validator changes can be evaluated without waiting for
+ * Developer tool: run the real assistant pipeline against a local llama-server,
+ * so prompt and validator changes can be evaluated without waiting for
  * emulator-speed prefill.
  *
- * Usage (from the repo root):
- *   bun scripts/eval-local-model.ts "heavy bleeding" "how do I stop bleeding?"
+ * Usage (from the repo root, with a llama-server already listening):
+ *   KM_SERVER=http://127.0.0.1:8099/v1/chat/completions \
+ *     bun scripts/eval-local-model.ts "heavy bleeding" "panic attack"
  *
  * Environment:
- *   KM_LLAMA_CLI  path to llama-cli (default: /tmp/llama-b11556/llama-cli.exe)
- *   KM_GGUF       path to the model (default: /tmp/bonsai.gguf)
- *   KM_LANG       en | hi | hinglish (default: en)
+ *   KM_SERVER  chat-completions URL (default http://127.0.0.1:8099/v1/chat/completions)
+ *   KM_LANG    en | hi | hinglish | auto (default: auto, as in the app)
+ *   KM_MODE    REPHRASE | QUESTION | CLARIFY | SITUATION (default: routed, as in the app)
+ *   KM_SOURCE  record id to pin, e.g. bleeding (default: none)
+ *   KM_STEP    1-based step for CLARIFY (default: parsed from the question)
+ *   KM_JSON    write a machine-readable result file to this path
+ *   KM_DUMP    write the exact messages instead of calling the server
  *
- * The prompt is built by the same functions the app uses, then rendered as the
- * ChatML text llama.cpp's jinja template produces with enable_thinking=false,
- * which is the branch the app selects too.
+ * The prompt is built by the same functions the app uses (planAssistantRequest),
+ * and llama.cpp applies the checkpoint's own chat template (jinja), which is the
+ * branch the app selects too, so this exercises the shipped path rather than a
+ * hand-written ChatML string.
  */
 
 import { writeFileSync } from 'node:fs';
 
-import { maxTokensFor, stopSequences } from '../src/core/ai/prompts';
+import { maxTokensFor, stopSequences, type AnswerLanguage, type AssistantMode } from '../src/core/ai/prompts';
 import { validateAnswer } from '../src/core/ai/validation';
 import { planAssistantRequest } from '../src/core/ai/assistant';
-import type { AnswerLanguage } from '../src/core/ai/prompts';
 
-const LANGUAGE = (process.env.KM_LANG ?? 'en') as AnswerLanguage;
+const env = (name: string): string | undefined => {
+  const value = process.env[name];
+  return value && value.trim().length > 0 ? value.trim() : undefined;
+};
 
-type ServerReply = { content: string; reasoning: string | null; prefillMs: number; prefillTps: number; decodeTps: number; tokens: number };
+const LANGUAGE = (env('KM_LANG') ?? 'auto') as AnswerLanguage | 'auto';
+const MODE = env('KM_MODE') as AssistantMode | undefined;
+const SOURCE = env('KM_SOURCE');
+const STEP = env('KM_STEP') ? Number.parseInt(env('KM_STEP') as string, 10) : undefined;
+
+type ServerReply = {
+  content: string;
+  reasoning: string | null;
+  prefillMs: number;
+  prefillTps: number;
+  decodeTps: number;
+  tokens: number;
+};
+
+export type EvalRow = {
+  query: string;
+  mode: AssistantMode;
+  language: AnswerLanguage;
+  sources: string[];
+  accepted: boolean;
+  failure: string | null;
+  detail: string | null;
+  prefillTps: number;
+  decodeTps: number;
+  tokens: number;
+  answer: string;
+  reasoningLeaked: boolean;
+};
 
 /**
  * Ask a running llama-server (upstream build) with the app's exact messages.
- *
  * The template is applied by llama.cpp itself, which is also what the app does
- * (`jinja: true`), so this exercises the checkpoint's own non-thinking branch
- * rather than a hand-written ChatML string.
+ * (`jinja: true`), so this uses the checkpoint's non-thinking branch.
  */
 async function runServer(system: string, user: string, maxTokens: number): Promise<ServerReply> {
   const url = process.env.KM_SERVER ?? 'http://127.0.0.1:8099/v1/chat/completions';
@@ -51,6 +84,10 @@ async function runServer(system: string, user: string, maxTokens: number): Promi
       repeat_penalty: 1.1,
       stop: stopSequences(),
       chat_template_kwargs: { enable_thinking: false },
+      // The app re-processes the whole prompt for every answer (it keeps one
+      // llama.rn context and no cross-request KV reuse), so measuring with a
+      // warmed prompt cache would report a prefill speed the phone never sees.
+      cache_prompt: false,
       stream: false,
     }),
   });
@@ -76,30 +113,52 @@ if (queries.length === 0) {
   console.error('usage: bun scripts/eval-local-model.ts "query" ["query" ...]');
   process.exit(1);
 }
+
+const rows: EvalRow[] = [];
+
 for (const query of queries) {
-  const plan = planAssistantRequest(query, { language: LANGUAGE });
+  const plan = planAssistantRequest(query, {
+    language: LANGUAGE,
+    mode: MODE,
+    sourceId: SOURCE as never,
+    stepIndex: STEP,
+  });
   if (plan.kind === 'unsupported') {
-    console.log(`
-=== ${JSON.stringify(query)} [${plan.mode}/${plan.language}] -> unsupported (no record passed the retrieval threshold)`);
+    console.log(
+      `
+=== ${JSON.stringify(query)} [${plan.mode}/${plan.language}] -> unsupported (no record passed the retrieval threshold)`,
+    );
+    rows.push({
+      query,
+      mode: plan.mode,
+      language: plan.language,
+      sources: [],
+      accepted: false,
+      failure: 'unsupported',
+      detail: 'retrieval below threshold',
+      prefillTps: 0,
+      decodeTps: 0,
+      tokens: 0,
+      answer: plan.text,
+      reasoningLeaked: false,
+    });
     continue;
   }
   const { mode, language, sources } = plan;
   const system = process.env.KM_SYSTEM ?? plan.system;
-  const user = process.env.KM_SUFFIX ? `${plan.user}
-${process.env.KM_SUFFIX}` : plan.user;
+  const user = process.env.KM_SUFFIX ? `${plan.user}\n${process.env.KM_SUFFIX}` : plan.user;
   if (process.env.KM_DUMP) {
-    writeFileSync(`${process.env.TMP ?? '/tmp'}/km-messages.json`, JSON.stringify({
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      max_tokens: maxTokensFor(mode),
-    }, null, 2));
+    writeFileSync(
+      `${process.env.TMP ?? '.'}/km-messages.json`,
+      JSON.stringify({ messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: maxTokensFor(mode) }, null, 2),
+    );
     console.log(`messages written for ${mode}/${language}`);
     continue;
   }
   const reply = await runServer(system, user, maxTokensFor(mode));
-  const verdict = validateAnswer({ mode, raw: reply.content, records: sources, language });
+  // Exactly what runAssistant passes, including the CLARIFY step, so the
+  // harness measures the same validation the app performs.
+  const verdict = validateAnswer({ mode, raw: reply.content, records: sources, language, stepIndex: plan.stepIndex });
 
   console.log(
     `
@@ -109,6 +168,35 @@ ${process.env.KM_SUFFIX}` : plan.user;
   console.log(`sources: ${sources.map((entry) => entry.id).join(', ')}`);
   if (reply.reasoning) console.log(`reasoning leaked: ${JSON.stringify(reply.reasoning.slice(0, 120))}`);
   console.log(`raw: ${JSON.stringify(reply.content)}`);
-  console.log(verdict.ok ? 'verdict: ACCEPTED' : `verdict: REJECTED (${verdict.failure})`);
+  console.log(
+    verdict.ok
+      ? 'verdict: ACCEPTED'
+      : `verdict: REJECTED (${verdict.failure}${verdict.detail ? `: ${verdict.detail}` : ''})`,
+  );
   if (verdict.ok) console.log(`clean: ${JSON.stringify(verdict.text)}`);
+
+  rows.push({
+    query,
+    mode,
+    language,
+    sources: sources.map((entry) => entry.id),
+    accepted: verdict.ok,
+    failure: verdict.ok ? null : verdict.failure,
+    detail: verdict.ok ? null : (verdict.detail ?? null),
+    prefillTps: reply.prefillTps,
+    decodeTps: reply.decodeTps,
+    tokens: reply.tokens,
+    answer: verdict.ok ? verdict.text : reply.content,
+    reasoningLeaked: Boolean(reply.reasoning),
+  });
+}
+
+if (rows.length > 0) {
+  const accepted = rows.filter((row) => row.accepted).length;
+  console.log(`\nsummary: ${accepted}/${rows.length} accepted`);
+  const target = process.env.KM_JSON;
+  if (target) {
+    writeFileSync(target, JSON.stringify(rows, null, 2));
+    console.log(`results written to ${target}`);
+  }
 }

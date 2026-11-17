@@ -27,9 +27,16 @@ import { KNOWLEDGE_BY_ID } from '../src/core/knowledge';
 const bleeding = KNOWLEDGE_BY_ID.get('bleeding');
 if (!bleeding) throw new Error('test fixture missing: bleeding entry');
 
+/**
+ * A faithful rephrasing of the six-step bleeding record. REPHRASE must keep
+ * every step, so a two-sentence stub would (correctly) be rejected.
+ */
 const GOOD_ANSWER =
-  'Put a cloth or clean pad directly on the wound and press down hard with both hands. ' +
-  'If blood soaks through, add another pad on top and keep pressing.';
+  'Put a cloth or a clean pad straight on the wound. Press down hard with both hands. ' +
+  'If blood soaks through, put another pad on top instead of removing the first. ' +
+  'Lay the person flat and raise the hurt limb above heart level if you can. ' +
+  'Keep pressing for at least 10 minutes before you look. ' +
+  'If it still will not stop, press the artery above the wound with a finger.';
 
 /** A backend that returns fixed text, optionally in several chunks. */
 function backendWith(chunks: string[], ready = true): LocalModelBackend {
@@ -119,6 +126,58 @@ describe('validation', () => {
     const outcome = validate('   ');
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.failure).toBe('empty');
+  });
+
+  // Measured false rejection: the model numbered its steps, the sentence counter
+  // counted each "1." as a sentence, and two good in-app answers were thrown
+  // away. List markers are formatting and must not count as sentences.
+  test('accepts a numbered list that keeps every approved step in order', () => {
+    const numbered = GOOD_ANSWER.split(/(?<=\.)\s+/)
+      .map((sentence, index) => `${index + 1}. ${sentence}`)
+      .join('\n');
+    const outcome = validate(numbered);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) expect(outcome.text).toContain('1.');
+  });
+
+  test('a numbered list still cannot smuggle in a new number', () => {
+    const outcome = validate('1. Press down hard on the wound with both hands for 500 minutes.');
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(['new_number', 'missing_step']).toContain(outcome.failure);
+  });
+
+  test('stops rejecting a three-item numbered answer for sentence count', () => {
+    const answer =
+      '1. Put a cloth or a clean pad straight on the wound.\n' +
+      '2. Press down hard with both hands.\n' +
+      '3. Keep pressing for at least 10 minutes before you look.';
+    const outcome = validateAnswer({ mode: 'QUESTION', raw: answer, records: [bleeding], language: 'en' });
+    if (!outcome.ok) expect(outcome.failure).not.toBe('too_many_sentences');
+  });
+
+  // Measured false rejection: "rescue breaths" (step 6) was matched to the word
+  // "breathing" in step 2, so a correctly ordered CPR answer was reported as
+  // out of order. Each step is now searched for after the previous one.
+  test('accepts a CPR answer whose later steps reuse an earlier step word', () => {
+    const cpr = KNOWLEDGE_BY_ID.get('cpr');
+    if (!cpr) throw new Error('test fixture missing: cpr entry');
+    const answer =
+      'Shout for help and tap their shoulders. Tilt the head back and check for normal breathing for 10 seconds. ' +
+      'Place the heel of your hand on the centre of the chest and push hard and fast, 100 to 120 times a minute. ' +
+      'Let the chest come all the way back up between pushes. If trained, give 2 rescue breaths after every 30 compressions.';
+    const outcome = validateAnswer({ mode: 'SITUATION', raw: answer, records: [cpr], language: 'en' });
+    expect(outcome.ok).toBe(true);
+  });
+
+  test('still rejects CPR steps given in the wrong order', () => {
+    const cpr = KNOWLEDGE_BY_ID.get('cpr');
+    if (!cpr) throw new Error('test fixture missing: cpr entry');
+    const scrambled =
+      'If trained, give 2 rescue breaths after every 30 compressions. ' +
+      'Shout for help and tap their shoulders. Tilt the head back and check for normal breathing for 10 seconds.';
+    const outcome = validateAnswer({ mode: 'SITUATION', raw: scrambled, records: [cpr], language: 'en' });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(['step_order', 'missing_step']).toContain(outcome.failure);
   });
 });
 
@@ -217,9 +276,11 @@ describe('routing and retrieval', () => {
 });
 
 describe('generation helpers', () => {
-  test('withTimeout resolves, and rejects on the deadline', async () => {
+  test('withTimeout resolves, and reports a deadline as null', async () => {
     await expect(withTimeout(Promise.resolve('ok'), 100)).resolves.toBe('ok');
-    await expect(withTimeout(new Promise(() => {}), 10)).rejects.toThrow();
+    // The timeout is a value, not an exception: callers must handle it as a
+    // normal outcome (fall back to the record) and never crash the card.
+    await expect(withTimeout(new Promise(() => {}), 10)).resolves.toBeNull();
   });
 
   test('generateText always resolves and reports a timeout', async () => {
@@ -247,7 +308,9 @@ describe('generation helpers', () => {
 
   test('cleaning strips chat-template leftovers', () => {
     expect(cleanModelText('<|im_start|>assistant\nPress hard.')).toBe('Press hard.');
-    expect(cleanModelText('---\n### Answer\nPress hard.')).toBe('Press hard.');
+    // Validation rejects headings outright; cleaning only normalises text that
+    // already passed, so it strips the hashes and keeps the words.
+    expect(cleanModelText('---\n### Answer\nPress hard.')).toBe('Answer\nPress hard.');
     expect(dropRepeatedTail('Press hard on the wound. Press hard on the wound.')).toBe(
       'Press hard on the wound.',
     );

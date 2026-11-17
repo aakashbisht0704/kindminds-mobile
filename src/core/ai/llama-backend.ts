@@ -1,13 +1,21 @@
 /**
  * llama.rn adapter for the Bonsai 2 chat model.
  *
- * Runtime facts this file depends on (llama.rn 0.12.9 → llama.cpp build 10256,
- * commit 6c8dcaa): it knows the `qwen35` architecture, the ternary `Q2_0` tensor
- * type and the Hadamard kernels Bonsai needs, and it forwards `enable_thinking`
- * plus `reasoning_format` into llama.cpp's chat layer. The checkpoint's own
- * Qwen3.5 chat template is therefore applied by llama.cpp (jinja) with
- * `enable_thinking: false`, which is the template's empty-think branch - not a
- * guess at the format and not post-hoc tag stripping.
+ * Runtime facts this file depends on, and the reason the dependency is pinned
+ * to llama.rn 0.13.0-rc.12 (llama.cpp build 12445, commit ef3848f):
+ *
+ * Bonsai 2 stores its ternary weights in a Hadamard-rotated basis and records
+ * that in `prism.hadamard.*` GGUF metadata. Build 10256 - the one inside
+ * llama.rn 0.12.9 - knows the `qwen35` architecture and the ternary `Q2_0`
+ * tensor type, but nothing about `prism.hadamard`, so it reads rotated weights
+ * as if they were plain Q2_0. The model still loads and generates, and answers
+ * in mixed-script gibberish. Build 12445 implements LLM_KV_PRISM_HADAMARD_* in
+ * llama-arch.cpp / llama-model.cpp and answers coherently from the same bytes.
+ *
+ * That is also why `jinja: true` is not cosmetic: llama.cpp applies the
+ * checkpoint's own Qwen3.5 chat template with `enable_thinking: false`, which is
+ * the template's empty-think branch - not a guess at the format and not
+ * post-hoc tag stripping.
  *
  * The native binding is loaded lazily so the rest of the app still works when
  * the module is missing, the model file is absent, or the phone is too small.
@@ -15,7 +23,7 @@
 
 import type { LlamaContext } from 'llama.rn';
 
-import type { GenerationRequest, LocalModelBackend, TokenStream } from './local-llm';
+import type { GenerationRequest, LocalModelBackend, RuntimeSpeed, TokenStream } from './local-llm';
 
 type LlamaModule = typeof import('llama.rn');
 
@@ -98,6 +106,9 @@ export class LlamaBackend implements LocalModelBackend {
 
   private config: LlamaBackendConfig;
 
+  /** Measured on this device by the last completion; null until then. */
+  private measuredSpeed: RuntimeSpeed | null = null;
+
   constructor(config: Partial<LlamaBackendConfig> = {}) {
     this.config = { ...DEFAULT_LLAMA_CONFIG, ...config };
   }
@@ -136,8 +147,6 @@ export class LlamaBackend implements LocalModelBackend {
     if (!context) throw new Error('No text model is loaded.');
 
     return tokenStream((emit, done) => {
-      const started = Date.now();
-      let count = 0;
       void context
         .completion(
           {
@@ -157,16 +166,18 @@ export class LlamaBackend implements LocalModelBackend {
             stop: [...request.stopSequences],
             seed: -1,
           },
-          (data) => {
-            count += 1;
-            if (count % 20 === 0) {
-              console.warn('[temp-token]', count, `${Date.now() - started}ms`, JSON.stringify(data.token));
-            }
-            emit(data.token ?? '');
-          },
+          (data) => emit(data.token ?? ''),
         )
-        .then(() => {
-          console.warn('[temp-token] done', count, 'tokens in', `${Date.now() - started}ms`);
+        .then((result) => {
+          // Real numbers from this device, used to size the next deadline
+          // instead of trusting a fixed timeout.
+          const timings = result?.timings;
+          if (timings && timings.prompt_per_second > 0 && timings.predicted_per_second > 0) {
+            this.measuredSpeed = {
+              prefillTps: timings.prompt_per_second,
+              decodeTps: timings.predicted_per_second,
+            };
+          }
           done();
         })
         .catch((error: unknown) => done(error instanceof Error ? error : new Error(String(error))));

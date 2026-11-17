@@ -32,6 +32,12 @@ export type GenerationRequest = {
   onToken?: (partial: string) => void;
 };
 
+/** Measured throughput of the loaded model on this device. */
+export type RuntimeSpeed = {
+  prefillTps: number;
+  decodeTps: number;
+};
+
 export type TokenStream = AsyncIterable<string>;
 
 /** What a llama.cpp / MediaPipe LLM Inference binding must provide. */
@@ -42,6 +48,8 @@ export type LocalModelBackend = {
   unload(): Promise<void>;
   /** Abandon the current generation, if the runtime supports it. */
   stop?(): void;
+  /** Last measured throughput, used to size the next deadline. */
+  speed?(): RuntimeSpeed | null;
 };
 
 const MAX_ANSWER_CHARS = 900;
@@ -137,8 +145,12 @@ export function withTimeout<T>(
  * normalises whitespace and stray markers in text that already passed.
  */
 export function cleanModelText(text: string): string {
-  return text
-    .replace(/<\/?(think|thinking|analysis|reasoning|answer|response)>/gi, ' ')
+  const withoutTokens = text
+    // Chat-template control tokens, then a role name left bare without them.
+    .replace(/<\|[^|>]*\|>/g, ' ')
+    .replace(/^\s*(?:assistant|system|user)\s*[:\n]\s*/i, '')
+    .replace(/<\/?(?:think|thinking|analysis|reasoning|answer|response)>/gi, ' ');
+  return withoutTokens
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*#{1,6}\s*/, ''))
     .filter((line) => /[A-Za-z0-9\u0900-\u097F]/.test(line))

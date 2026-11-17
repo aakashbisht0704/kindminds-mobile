@@ -62,7 +62,7 @@ const RULES = [
 const OUTPUT_RULES: Record<AssistantMode, string> = {
   REPHRASE:
     'TASK: Say the approved record in plainer words for a frightened person in a hurry. ' +
-    'Keep every step and warning. 2-4 short sentences, imperative.',
+    'One short imperative sentence per step, every step and warning kept.',
   QUESTION:
     'TASK: Answer using only the approved records. Give the answering steps in order, unmerged. ' +
     '2-4 short sentences. If they do not answer, say so.',

@@ -7,7 +7,7 @@ import { listModels, type LocalModel } from '../services/model-pack';
  * removal has to reach every mounted screen. The model manager publishes here
  * after it writes to the model directory; without it the assistant keeps a
  * stale answer (for example, no "Say it in plain words" action right after
- * Woof finished downloading).
+ * Bonsai finished downloading).
  */
 type ModelListener = () => void;
 

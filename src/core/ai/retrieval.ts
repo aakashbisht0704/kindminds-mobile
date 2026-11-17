@@ -43,11 +43,15 @@ export function stem(token: string): string {
   return token;
 }
 
-/** Devanagari letters are single tokens, so the split is Unicode-aware. */
+/**
+ * Unicode-aware split. `\p{M}` matters: Devanagari vowel signs are combining
+ * marks, so without it "खून" splits into single letters and the Hindi aliases
+ * never match anything.
+ */
 export function tokenize(input: string): string[] {
   return input
     .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
     .filter((token) => token.length > 1 && !STOPWORDS.has(token))
     .map(stem);
 }

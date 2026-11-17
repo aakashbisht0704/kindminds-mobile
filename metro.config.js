@@ -26,3 +26,14 @@ if (lite) {
 }
 
 module.exports = config;
+
+// Gradle writes and deletes CMake scratch directories under android/ while it
+// builds. Watching them crashes Metro with ENOENT the moment a build cleans up,
+// which happens routinely after `assembleRelease`, so keep the watcher out.
+{
+  const patterns = [/[\/]android[\/](app[\/])?\.cxx[\/].*/];
+  config.watcher = config.watcher ?? {};
+  const existing = config.watcher.blockList;
+  const list = Array.isArray(existing) ? existing : existing ? [existing] : [];
+  config.watcher.blockList = [...list, ...patterns];
+}
