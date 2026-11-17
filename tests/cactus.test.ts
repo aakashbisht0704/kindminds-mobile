@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { summarizeMirage } from '../src/core/ai/cactus-backend';
-import { buildMessages } from '../src/core/ai/local-llm';
+import { buildSystemPrompt, buildUserPrompt, toPromptRecord } from '../src/core/ai/prompts';
 import { KNOWLEDGE_BY_ID } from '../src/core/knowledge';
 
 describe('Mirage output normalisation', () => {
@@ -28,16 +28,19 @@ describe('Mirage output normalisation', () => {
   });
 });
 
-describe('Woof chat messages', () => {
-  test('uses the approved record and the grounding system prompt', () => {
+describe('assistant chat messages', () => {
+  test('uses the approved record and the record-only system prompt', () => {
     const bleeding = KNOWLEDGE_BY_ID.get('bleeding');
     if (!bleeding) throw new Error('missing bleeding record');
-    const messages = buildMessages({ query: 'heavy bleeding', entry: bleeding, language: 'English' });
-    expect(messages[0]?.role).toBe('system');
-    expect(messages[0]?.content).toContain('Use ONLY those steps');
-    expect(messages[1]?.role).toBe('user');
-    expect(messages[1]?.content).toContain(bleeding.title);
-    for (const step of bleeding.steps) expect(messages[1]?.content).toContain(step.text);
-    for (const rule of bleeding.never) expect(messages[1]?.content).toContain(rule);
+    const system = buildSystemPrompt('REPHRASE', 'en');
+    const user = buildUserPrompt({
+      mode: 'REPHRASE',
+      question: 'heavy bleeding',
+      records: [toPromptRecord(bleeding)],
+    });
+    expect(system).toContain('Use only the approved records');
+    expect(user).toContain(bleeding.title);
+    for (const step of bleeding.steps) expect(user).toContain(step.text);
+    for (const rule of bleeding.never) expect(user).toContain(rule);
   });
 });

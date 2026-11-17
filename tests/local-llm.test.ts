@@ -1,99 +1,158 @@
 /**
- * Guard tests for the on-device assistant.
+ * Tests for the offline assistant pipeline: prompts, validation, routing and
+ * the generate-and-check loop.
  *
- * The model is allowed to rephrase an approved record and nothing else. These
- * tests pin the two failure modes that matter: a model that wanders into new
- * advice, and a model that never answers. Both must fall back to the verbatim
- * record rather than leaving the user with a blank or invented instruction.
+ * The safety contract these tests pin down: a generated answer is shown only
+ * when it is built from the approved record in front of it. Every other
+ * outcome must fall back to the record itself, which is correct by
+ * construction, and must never show a partial or invented instruction.
  */
 
 import { describe, expect, test } from 'bun:test';
 
-import { KNOWLEDGE_BY_ID } from '../src/core/knowledge';
+import { planAssistantRequest, runAssistant, type AssistantOptions } from '../src/core/ai/assistant';
 import {
-  buildPrompt,
   cleanModelText,
   dropRepeatedTail,
+  generateText,
   isGrounded,
-  localAssist,
   trimDanglingSentence,
   withTimeout,
   type LocalModelBackend,
 } from '../src/core/ai/local-llm';
+import { buildSystemPrompt, buildUserPrompt, maxTokensFor, toPromptRecord } from '../src/core/ai/prompts';
+import { validateAnswer } from '../src/core/ai/validation';
+import { KNOWLEDGE_BY_ID } from '../src/core/knowledge';
 
 const bleeding = KNOWLEDGE_BY_ID.get('bleeding');
 if (!bleeding) throw new Error('test fixture missing: bleeding entry');
 
-function backendWith(text: string, ready = true): LocalModelBackend {
+const GOOD_ANSWER =
+  'Put a cloth or clean pad directly on the wound and press down hard with both hands. ' +
+  'If blood soaks through, add another pad on top and keep pressing.';
+
+/** A backend that returns fixed text, optionally in several chunks. */
+function backendWith(chunks: string[], ready = true): LocalModelBackend {
   return {
     isReady: async () => ready,
     loadModel: async () => {},
     unload: async () => {},
-    generate: () => (async function* () {
-      yield text;
-    })(),
+    generate: () =>
+      (async function* () {
+        for (const chunk of chunks) yield chunk;
+      })(),
   };
 }
 
-const request = { query: 'heavy bleeding', entry: bleeding, language: 'English' };
-
-describe('grounding', () => {
-  test('accepts a rephrasing that reuses the record vocabulary', () => {
-    const answer = 'Press hard on the wound. If blood soaks through, add another pad on top.';
-    expect(isGrounded(answer, bleeding)).toBe(true);
-  });
-
-  test('rejects invented dosage advice even when the topic matches', () => {
-    const answer = 'Press the wound and take 500 mg tablets every four hours.';
-    expect(isGrounded(answer, bleeding)).toBe(false);
-  });
-
-  test('rejects an answer that shares no vocabulary with the record', () => {
-    expect(isGrounded('You should probably just relax and rest.', bleeding)).toBe(false);
-  });
-});
+function run(query: string, backend: LocalModelBackend | null, options?: AssistantOptions) {
+  return runAssistant(backend, { query, options: { timeoutMs: 500, ...options } });
+}
 
 describe('prompt construction', () => {
-  test('includes the approved steps and the hard limits', () => {
-    const prompt = buildPrompt(request);
+  test('the system prompt carries the record-only contract and the mode task', () => {
+    const prompt = buildSystemPrompt('QUESTION', 'en');
+    expect(prompt).toContain('approved records');
+    expect(prompt).toContain('Add nothing from your own knowledge');
+    expect(prompt).toContain('Answer using only the approved records');
+    expect(prompt).toContain('LANGUAGE: English');
+  });
+
+  test('each mode asks for something different', () => {
+    const modes = ['REPHRASE', 'QUESTION', 'CLARIFY', 'SITUATION'] as const;
+    const prompts = modes.map((mode) => buildSystemPrompt(mode, 'en'));
+    expect(new Set(prompts).size).toBe(modes.length);
+    expect(maxTokensFor('SITUATION')).toBeGreaterThan(maxTokensFor('CLARIFY'));
+  });
+
+  test('the user prompt renders the approved record in full', () => {
+    const prompt = buildUserPrompt({
+      mode: 'REPHRASE',
+      question: 'heavy bleeding',
+      records: [toPromptRecord(bleeding)],
+    });
+    expect(prompt).toContain(`TITLE: ${bleeding.title}`);
     for (const step of bleeding.steps) expect(prompt).toContain(step.text);
     for (const rule of bleeding.never) expect(prompt).toContain(rule);
-    expect(prompt).toContain('Use ONLY those steps');
+    expect(prompt).toContain('<user_message>');
+  });
+
+  test('Hindi output asks for Devanagari and Hinglish for Latin script', () => {
+    expect(buildSystemPrompt('QUESTION', 'hi')).toContain('Devanagari');
+    expect(buildSystemPrompt('QUESTION', 'hinglish')).toContain('Hinglish');
   });
 });
 
-describe('localAssist fallback', () => {
-  test('returns the verbatim record when no backend is installed', async () => {
-    const result = await localAssist(null, request);
-    expect(result.provenance).toBe('record');
-    expect(result.text).toContain(bleeding.summary);
-    for (const step of bleeding.steps) expect(result.text).toContain(step.text);
+describe('validation', () => {
+  const validate = (raw: string, mode: 'REPHRASE' | 'QUESTION' = 'REPHRASE') =>
+    validateAnswer({ mode, raw, records: [bleeding], language: 'en' });
+
+  test('accepts a faithful rephrasing that keeps the steps', () => {
+    const outcome = validate(GOOD_ANSWER);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) expect(outcome.text).toBe(GOOD_ANSWER);
   });
 
-  test('returns the record when the backend is not ready', async () => {
-    const result = await localAssist(backendWith('anything', false), request);
-    expect(result.provenance).toBe('record');
+  test('rejects a reasoning trace instead of hiding it', () => {
+    const outcome = validate(`Thinking Process:\n1. Analyse the request.\n\n${GOOD_ANSWER}`);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.failure).toBe('reasoning_marker');
   });
 
-  test('retries once when the model stops after a word or two', async () => {
-    let calls = 0;
-    const flaky: LocalModelBackend = {
-      isReady: async () => true,
-      loadModel: async () => {},
-      unload: async () => {},
-      generate: () => (async function* () {
-        calls += 1;
-        yield calls === 1
-          ? 'Press.'
-          : 'Press hard on the wound. If blood soaks through, add another pad on top.';
-      })(),
-    };
-    const result = await localAssist(flaky, request);
-    expect(calls).toBe(2);
-    expect(result.provenance).toBe('model');
+  test('rejects template artefacts such as headings and empty bullets', () => {
+    const outcome = validate(`### Answer\n- \n${GOOD_ANSWER}`);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.failure).toBe('template_artifact');
   });
 
-  test('reports a timeout separately from a rejected answer', async () => {
+  test('rejects a dose that is not in the approved record', () => {
+    const outcome = validate('Press hard on the wound and give 500 mg of paracetamol.');
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(['unsafe_advice', 'new_number']).toContain(outcome.failure);
+  });
+
+  test('rejects an answer that abandons the approved steps', () => {
+    const outcome = validate('Stay calm and rest. Everything will be fine soon.');
+    expect(outcome.ok).toBe(false);
+  });
+
+  test('rejects an empty answer', () => {
+    const outcome = validate('   ');
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.failure).toBe('empty');
+  });
+});
+
+describe('assistant outcomes', () => {
+  test('shows a validated model answer with its provenance', async () => {
+    const outcome = await run('heavy bleeding', backendWith([GOOD_ANSWER]), { mode: 'REPHRASE' });
+    expect(outcome.kind).toBe('answer');
+    if (outcome.kind === 'answer') {
+      expect(outcome.provenance).toBe('model');
+      expect(outcome.primary.id).toBe('bleeding');
+      expect(outcome.text).toContain('clean pad');
+    }
+  });
+
+  test('falls back to the record when no model is installed', async () => {
+    const outcome = await run('heavy bleeding', null);
+    expect(outcome.kind).toBe('fallback');
+    if (outcome.kind === 'fallback') {
+      expect(outcome.reason).toBe('no_model');
+      // An empty text keeps the approved record visible instead of replacing it.
+      expect(outcome.text).toBe('');
+      expect(outcome.primary.id).toBe('bleeding');
+    }
+  });
+
+  test('falls back when the model output fails validation', async () => {
+    const outcome = await run('heavy bleeding', backendWith(['Take two tablets every four hours.']), {
+      mode: 'REPHRASE',
+    });
+    expect(outcome.kind).toBe('fallback');
+    if (outcome.kind === 'fallback') expect(outcome.reason).toBe('rejected');
+  });
+
+  test('reports a timeout separately from a rejection', async () => {
     const silent: LocalModelBackend = {
       isReady: async () => true,
       loadModel: async () => {},
@@ -102,82 +161,103 @@ describe('localAssist fallback', () => {
         await new Promise(() => {});
       })(),
     };
-    const result = await localAssist(silent, request, { timeoutMs: 10 });
-    expect(result.reason).toBe('timeout');
+    const outcome = await run('heavy bleeding', silent, { timeoutMs: 20 });
+    expect(outcome.kind).toBe('fallback');
+    if (outcome.kind === 'fallback') expect(outcome.reason).toBe('timeout');
   });
 
-  test('says why the record came back when the wording wanders', async () => {
-    const result = await localAssist(backendWith('Rest and drink plenty of fluids today.'), request, {
-      timeoutMs: 200,
-    });
-    expect(result.provenance).toBe('record');
-    expect(result.reason).toBe('ungrounded');
-  });
-
-  test('returns the model phrasing only when it is grounded', async () => {
-    const answer = 'Press hard on the wound. Add another pad if blood soaks through.';
-    const result = await localAssist(backendWith(answer), request, { timeoutMs: 200 });
-    expect(result.provenance).toBe('model');
-    expect(result.text).toBe(answer);
-  });
-
-  test('discards an ungrounded model answer', async () => {
-    const result = await localAssist(backendWith('Take 500 mg tablets and rest.'), request, {
-      timeoutMs: 200,
-    });
-    expect(result.provenance).toBe('record');
-    expect(result.reason).toBe('ungrounded');
+  test('a question with no matching record is refused without guessing', async () => {
+    const outcome = await run('how do I repair a diesel generator injector pump', backendWith([GOOD_ANSWER]));
+    expect(outcome.kind).toBe('unsupported');
+    if (outcome.kind === 'unsupported') {
+      expect(outcome.provenance).toBe('none');
+      expect(outcome.text).toContain('does not contain enough information');
+    }
   });
 });
 
-describe('withTimeout', () => {
-  test('returns the value when the work finishes in time', async () => {
-    await expect(withTimeout(Promise.resolve(7), 50)).resolves.toBe(7);
+describe('routing and retrieval', () => {
+  test('a record tap is pinned as the source for a rephrase', () => {
+    const plan = planAssistantRequest('explain this', { mode: 'REPHRASE', sourceId: 'burns' });
+    expect(plan.kind).toBe('planned');
+    if (plan.kind === 'planned') {
+      expect(plan.mode).toBe('REPHRASE');
+      expect(plan.primary.id).toBe('burns');
+    }
   });
 
-  test('returns null when the work never finishes', async () => {
-    await expect(withTimeout(new Promise<number>(() => {}), 10)).resolves.toBeNull();
+  test('step questions become a CLARIFY request for that step', () => {
+    const plan = planAssistantRequest('what does step 2 mean', { sourceId: 'bleeding' });
+    expect(plan.kind).toBe('planned');
+    if (plan.kind === 'planned') {
+      expect(plan.mode).toBe('CLARIFY');
+      expect(plan.stepIndex).toBe(2);
+    }
   });
 
-  test('cancels the backend when the deadline passes', async () => {
-    let stopped = false;
-    const result = await withTimeout(new Promise<number>(() => {}), 5, () => {
-      stopped = true;
-    });
-    expect(result).toBeNull();
-    expect(stopped).toBe(true);
+  test('a described situation routes to SITUATION with several sources', () => {
+    const plan = planAssistantRequest('the flood water is rising and we are on the roof');
+    expect(plan.kind).toBe('planned');
+    if (plan.kind === 'planned') {
+      expect(plan.mode).toBe('SITUATION');
+      expect(plan.sources.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  test('Devanagari and Hinglish questions both find the bleeding record', () => {
+    for (const query of ['खून बहुत बह रहा है', 'khoon band nahi ho raha']) {
+      const plan = planAssistantRequest(query);
+      expect(plan.kind).toBe('planned');
+      if (plan.kind === 'planned') {
+        expect(plan.language).not.toBe('en');
+        expect(plan.sources[0]?.id).toBe('bleeding');
+      }
+    }
   });
 });
 
-describe('model output tidying', () => {
-  test('drops chat-template leftovers, rules, and headings', () => {
-    const raw = '---\n\n---\n  </think>\n\n### Answer\nApply a cloth or clean pad.';
-    expect(cleanModelText(raw)).toBe('Answer\nApply a cloth or clean pad.');
+describe('generation helpers', () => {
+  test('withTimeout resolves, and rejects on the deadline', async () => {
+    await expect(withTimeout(Promise.resolve('ok'), 100)).resolves.toBe('ok');
+    await expect(withTimeout(new Promise(() => {}), 10)).rejects.toThrow();
   });
 
-  test('keeps a reply that is already plain prose', () => {
-    const clean = 'Press down hard with both hands and keep pressing.';
-    expect(cleanModelText(clean)).toBe(clean);
+  test('generateText always resolves and reports a timeout', async () => {
+    const silent: LocalModelBackend = {
+      isReady: async () => true,
+      loadModel: async () => {},
+      unload: async () => {},
+      generate: () => (async function* () {
+        await new Promise(() => {});
+      })(),
+    };
+    const outcome = await generateText(silent, {
+      messages: [{ role: 'user', content: 'hi' }],
+      maxTokens: 8,
+      temperature: 0.2,
+      topP: 0.85,
+      topK: 20,
+      repeatPenalty: 1.1,
+      stopSequences: [],
+      timeoutMs: 20,
+    });
+    expect(outcome.timedOut).toBe(true);
+    expect(outcome.text).toBe('');
   });
 
-  test('cuts a sentence that the token cap stopped mid-way', () => {
-    expect(trimDanglingSentence('Press hard on the wound. The last sentence')).toBe(
+  test('cleaning strips chat-template leftovers', () => {
+    expect(cleanModelText('<|im_start|>assistant\nPress hard.')).toBe('Press hard.');
+    expect(cleanModelText('---\n### Answer\nPress hard.')).toBe('Press hard.');
+    expect(dropRepeatedTail('Press hard on the wound. Press hard on the wound.')).toBe(
+      'Press hard on the wound.',
+    );
+    expect(trimDanglingSentence('Press hard on the wound. If blood soaks')).toBe(
       'Press hard on the wound.',
     );
   });
 
-  test('leaves text without any full sentence alone', () => {
-    expect(trimDanglingSentence('Press hard on the wound')).toBe('Press hard on the wound');
-  });
-
-  test('stops at the sentence a looping model prints twice', () => {
-    const looped =
-      'Keep pressing with a cloth. Add another pad on top. Keep pressing with a cloth. Add another pad on top.';
-    expect(dropRepeatedTail(looped)).toBe('Keep pressing with a cloth. Add another pad on top.');
-  });
-
-  test('keeps an answer that never repeats itself', () => {
-    const answer = 'Press the wound. Add a pad if blood soaks through. Keep pressing for ten minutes.';
-    expect(dropRepeatedTail(answer)).toBe(answer);
+  test('legacy grounding still recognises record vocabulary', () => {
+    expect(isGrounded(GOOD_ANSWER, bleeding)).toBe(true);
+    expect(isGrounded('You should probably just relax and rest.', bleeding)).toBe(false);
   });
 });

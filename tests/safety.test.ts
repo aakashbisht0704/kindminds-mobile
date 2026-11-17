@@ -6,7 +6,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { assessQuery, containsUnsafeAdvice } from '../src/core/ai/safety';
 import { KNOWLEDGE_BY_ID } from '../src/core/knowledge';
-import { localAssist, type LocalModelBackend } from '../src/core/ai/local-llm';
+import { runAssistant } from '../src/core/ai/assistant';
+import type { LocalModelBackend } from '../src/core/ai/local-llm';
 
 describe('crisis routing', () => {
   test('self-harm language is routed to support and grounding', () => {
@@ -48,7 +49,7 @@ describe('model output safety', () => {
     expect(containsUnsafeAdvice('Push hard and fast, 5 to 6 cm deep, 100 to 120 times a minute.')).toBe(false);
   });
 
-  test('localAssist rejects a grounded-looking answer that contains a dose', async () => {
+  test('the assistant rejects a grounded-looking answer that contains a dose', async () => {
     const bleeding = KNOWLEDGE_BY_ID.get('bleeding');
     if (!bleeding) throw new Error('missing bleeding record');
 
@@ -62,11 +63,11 @@ describe('model output safety', () => {
         })(),
     };
 
-    const result = await localAssist(
-      backend,
-      { query: 'heavy bleeding', entry: bleeding, language: 'English' },
-      { timeoutMs: 200 },
-    );
+    const result = await runAssistant(backend, {
+      query: 'heavy bleeding',
+      options: { mode: 'REPHRASE', sourceId: 'bleeding', timeoutMs: 500 },
+    });
     expect(result.provenance).toBe('record');
+    expect(result.kind).toBe('fallback');
   });
 });
