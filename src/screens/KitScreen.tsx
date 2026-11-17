@@ -25,6 +25,7 @@ import {
   StatRow,
 } from '../components/ui';
 import { ModelManager } from '../components/ModelManager';
+import { Licences } from '../components/Licences';
 import {
   GROUP_LABELS,
   KIT_GROUPS,
@@ -200,6 +201,7 @@ export function KitScreen({ mesh, onClose }: { mesh: MeshApi; onClose?: () => vo
 
       <SectionLabel>On-device models</SectionLabel>
       <ModelManager />
+      <Licences />
 
       <ActionButton
         label={showDevice ? 'Hide device and data' : 'Device and data'}
