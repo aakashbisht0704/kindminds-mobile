@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "KindMinds Kit",
+    "slug": "kindminds-mobile",
+    "version": "0.1.0",
+    "scheme": "kindminds",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "org.kindminds.kit",
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_ADVERTISE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "org.kindminds.kit",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "KindMinds uses your GPS position offline to place you on the local survival map and share coordinates with nearby rescuers over Bluetooth.",
+        "NSBluetoothAlwaysUsageDescription": "KindMinds uses Bluetooth to exchange SOS alerts and messages with nearby phones when mobile networks are down.",
+        "UIBackgroundModes": [
+          "location",
+          "bluetooth-central"
+        ],
+        "NSMicrophoneUsageDescription": "KindMinds uses the microphone only when you tap the voice button, to turn your speech into text on this phone. Audio never leaves the device."
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "KindMinds keeps your position on the offline map while you navigate to safety."
+        }
+      ],
+      [
+        "llama.rn",
+        {
+          "enableOpenCLAndHexagon": true
+        }
+      ]
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+# Normalise line endings in the repository; serialise binary assets as-is.
+* text=auto eol=lf
+
+*.png binary
+*.webp binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.jar binary
+*.a binary
+*.so binary
+*.keystore binary
+*.gguf binary
+*.cact binary

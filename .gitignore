@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+web-build/
+dist/
+
+# Logs and local state
+*.log
+.DS_Store
+.idea/
+*.iml
+*.hprof
+.env*.local
+
+# Signing material (the debug keystore is intentionally committed)
+*.keystore
+*.jks
+!android/app/debug.keystore
+
+# Map and model weights (large, user-supplied, licence-bound)
+assets/models/*
+*.gguf
+*.cact
+*.bin
+
+# Android build output and machine-specific configuration
+android/app/build/
+android/build/
+android/.gradle/
+android/.kotlin/
+android/.cxx/
+android/local.properties
+
+# Packaged APKs and bundles
+*.apk
+*.aab
+*.jsbundle
+
+# Native build staging
+.tmp-cactus2/
+android/app/src/main/assets/ggml-hexagon/
+
+# Local device captures and UI dumps
+/boot-check.png
+/emulator-now.png
+/live-emulator.png
+/ui.xml
+/ui2.xml
+/dialog.xml
+
+# Agent/tool state local to a machine
+.agents/
+.claude/
+skills-lock.json

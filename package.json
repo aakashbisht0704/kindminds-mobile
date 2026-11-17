@@ -1,0 +1,47 @@
+{
+  "name": "kindminds-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "description": "KindMinds Offline Kit - a fully local disaster survival companion (offline map, on-device AI, Bluetooth mesh messaging).",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test tests",
+    "verify": "tsc --noEmit && bun test tests",
+    "setup:native": "node scripts/setup-native.mjs"
+  },
+  "dependencies": {
+    "@fugood/react-native-audio-pcm-stream": "1.1.4",
+    "@noble/ciphers": "^1.3.0",
+    "@noble/curves": "^1.9.0",
+    "@noble/hashes": "^1.8.0",
+    "cactus-react-native": "1.13.1",
+    "expo": "^54.0.0",
+    "expo-asset": "~12.0.14",
+    "expo-battery": "^10.0.0",
+    "expo-haptics": "^15.0.0",
+    "expo-location": "^19.0.0",
+    "expo-sqlite": "^16.0.0",
+    "expo-status-bar": "^3.0.0",
+    "llama.rn": "0.13.0-rc.12",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-ble-plx": "^3.5.0",
+    "react-native-get-random-values": "^2.1.0",
+    "react-native-nitro-modules": "^0.33.9",
+    "react-native-safe-area-context": "^5.11.1",
+    "react-native-svg": "^15.12.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/react": "~19.1.0",
+    "typescript": "~5.9.2"
+  },
+  "trustedDependencies": [
+    "llama.rn",
+    "@fugood/react-native-audio-pcm-stream"
+  ]
+}

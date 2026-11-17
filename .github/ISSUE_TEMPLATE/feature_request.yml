@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose a capability or an improvement
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation in the field, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should the app do? Include the offline/degraded path.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Assist / on-device AI
+        - Map / offline packs
+        - Chat / Bluetooth mesh
+        - SOS
+        - Kit / preparedness
+        - Onboarding / downloads
+        - Build / release
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Power, radio, storage, safety, or privacy implications. Does it work with no network, no fix, no model, or no peer?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and docs.
+          required: true
+        - label: This does not require weakening a safety check.
+          required: true
