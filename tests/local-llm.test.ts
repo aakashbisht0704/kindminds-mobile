@@ -10,7 +10,14 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { planAssistantRequest, runAssistant, type AssistantOptions } from '../src/core/ai/assistant';
+import {
+  MAX_TIMEOUT_MS,
+  MIN_TIMEOUT_MS,
+  estimateTimeout,
+  planAssistantRequest,
+  runAssistant,
+  type AssistantOptions,
+} from '../src/core/ai/assistant';
 import {
   cleanModelText,
   dropRepeatedTail,
@@ -89,6 +96,27 @@ describe('prompt construction', () => {
   });
 });
 
+describe('deadline policy', () => {
+  test('an unmeasured device gets the full cap, not a guess', () => {
+    expect(estimateTimeout(2000, 140)).toBe(MAX_TIMEOUT_MS);
+    expect(estimateTimeout(2000, 140, null)).toBe(MAX_TIMEOUT_MS);
+  });
+
+  test('a measured device gets a budget scaled to its own speed', () => {
+    // 450 prompt tokens at 150 tok/s plus 140 tokens at 25 tok/s, with 1.5x headroom,
+    // is under the 20 s floor; a 6 tok/s prefill device lands on the cap instead.
+    const fast = estimateTimeout(1800, 140, { prefillTps: 150, decodeTps: 25 });
+    const slow = estimateTimeout(1800, 140, { prefillTps: 6, decodeTps: 3 });
+    expect(fast).toBeGreaterThanOrEqual(MIN_TIMEOUT_MS);
+    expect(fast).toBeLessThan(slow);
+    expect(slow).toBe(MAX_TIMEOUT_MS);
+  });
+
+  test('the budget never drops below the product floor', () => {
+    expect(estimateTimeout(10, 1, { prefillTps: 1000, decodeTps: 1000 })).toBe(MIN_TIMEOUT_MS);
+  });
+});
+
 describe('validation', () => {
   const validate = (raw: string, mode: 'REPHRASE' | 'QUESTION' = 'REPHRASE') =>
     validateAnswer({ mode, raw, records: [bleeding], language: 'en' });
@@ -153,6 +181,18 @@ describe('validation', () => {
       '3. Keep pressing for at least 10 minutes before you look.';
     const outcome = validateAnswer({ mode: 'QUESTION', raw: answer, records: [bleeding], language: 'en' });
     if (!outcome.ok) expect(outcome.failure).not.toBe('too_many_sentences');
+  });
+
+  test('a CLARIFY answer may name the step it explains', () => {
+    const answer = 'Step 3 means if blood soaks through, add another pad on top and do not remove the first one.';
+    const outcome = validateAnswer({ mode: 'CLARIFY', raw: answer, records: [bleeding], language: 'en', stepIndex: 3 });
+    expect(outcome.ok).toBe(true);
+  });
+
+  test('a CLARIFY answer still cannot invent a number', () => {
+    const answer = 'Step 3 means press down hard and give 500 mg of paracetamol.';
+    const outcome = validateAnswer({ mode: 'CLARIFY', raw: answer, records: [bleeding], language: 'en', stepIndex: 3 });
+    expect(outcome.ok).toBe(false);
   });
 
   // Measured false rejection: "rescue breaths" (step 6) was matched to the word

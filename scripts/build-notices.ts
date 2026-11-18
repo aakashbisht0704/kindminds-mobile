@@ -22,8 +22,7 @@ function read(name: string): string {
 }
 
 const licenses: Record<string, string> = {
-  BONSAI_NOTICE: read('Ternary-Bonsai-2-2B-NOTICE.txt'),
-  APACHE2: read('Ternary-Bonsai-2-2B-LICENSE.txt'),
+  APACHE2: read('Qwen2.5-1.5B-Instruct-LICENSE.txt'),
   LLAMACPP: read('llama.cpp-LICENSE.txt'),
 };
 

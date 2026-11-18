@@ -3,7 +3,7 @@
  *
  * Keeping them in the APK means the small, essential models are available
  * before a connection exists. They are copied into the same model directory the
- * downloadable Bonsai model uses, then registered in the manifest. The copy is
+ * downloadable text model uses, then registered in the manifest. The copy is
  * atomic: a partial file never replaces a working model.
  */
 

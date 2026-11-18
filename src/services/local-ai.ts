@@ -1,7 +1,7 @@
 /**
  * Process-wide access to the native model runtimes.
  *
- * - Bonsai 2 2B: GGUF through llama.rn (question answering from the records)
+ * - Qwen2.5 1.5B Instruct: GGUF through llama.rn (answers from the records)
  * - Shruti: `.cact` through the native Cactus 4.1 bridge (speech-to-text)
  * - Mirage: `.cact` through the native Cactus 4.1 bridge (vision)
  *
@@ -48,9 +48,10 @@ function prefer(models: LocalModel[], kind: LocalModel['kind'], needle: string):
 
 export async function loadTextModel(): Promise<LoadedTextModel | null> {
   const models = await listModels();
-  // Bonsai 2 is the shipped text model; a Woof file from an older install still
-  // works if it is the only text model on the device.
-  const model = prefer(models, 'text', 'bonsai') ?? prefer(models, 'text', 'woof');
+  // Only a Qwen2.5 file, matched by name: a generic fallback would pick up a
+  // leftover Bonsai GGUF from an older install, and the standard llama.cpp runtime
+  // cannot decode that checkpoint. Loading nothing shows the approved record.
+  const model = models.find((entry) => entry.kind === 'text' && entry.name.toLowerCase().includes('qwen'));
   if (!model) return null;
   const backend = llamaBackend();
   await backend.loadModel(model.uri);
@@ -110,7 +111,7 @@ export async function assistQuery(
   try {
     loaded = await loadTextModel();
   } catch (error) {
-    console.warn('[KindMinds] Bonsai could not start', error);
+    console.warn('[KindMinds] the text model could not start', error);
     loaded = null;
   }
   armIdleUnload();

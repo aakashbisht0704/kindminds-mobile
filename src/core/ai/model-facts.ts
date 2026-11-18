@@ -20,20 +20,24 @@ export type ModelFacts = {
 };
 
 /**
- * PrismML Ternary Bonsai 2 2B, Q2_0.
+ * Qwen2.5-1.5B-Instruct, Q4_K_M, by Bartowski.
  *
- * Verified against the publisher's SHA256SUMS and by hashing the downloaded file
- * on the host: 546,689,504 bytes, digest below. Apache-2.0, base Qwen/Qwen3.5-2B.
- * The ternary weights are stored in a Hadamard-rotated basis, so it needs a
- * llama.cpp new enough to understand `prism.hadamard.*` (see llama-backend.ts).
+ * 986,048,768 bytes exactly (the HTTP Content-Length and the HF file listing
+ * agree), and the SHA-256 below is the file's LFS object id in that repository,
+ * confirmed again by hashing the downloaded file. Apache-2.0, base
+ * Qwen/Qwen2.5-1.5B-Instruct.
+ *
+ * This is a plain Qwen2 GGUF with a ChatML template and no rotated weights or
+ * custom tensor types, so the standard llama.cpp that ships inside llama.rn
+ * runs it. That is the whole reason it is here: no fork, no kernel work.
  */
 export const TEXT_MODEL: ModelFacts = {
-  name: 'Ternary-Bonsai-2-2B-Q2_0.gguf',
-  url: 'https://huggingface.co/prism-ml/Ternary-Bonsai-2-2B-gguf/resolve/main/Ternary-Bonsai-2-2B-Q2_0.gguf',
-  bytes: 546_689_504,
-  sha256: 'c2893fa6f951daee8b7263d5f49b455e57989ef56417a22125b03566dc560650',
+  name: 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf',
+  url: 'https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf',
+  bytes: 986_048_768,
+  sha256: '1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370',
   licence: 'Apache-2.0',
-  source: 'https://huggingface.co/prism-ml/Ternary-Bonsai-2-2B-gguf',
+  source: 'https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF',
 };
 
 /** Udgam Shruti, bundled in the full APK, run by the Cactus 4.1 bridge. */

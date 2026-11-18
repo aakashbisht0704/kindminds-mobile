@@ -1,7 +1,7 @@
 /**
  * On-device model status.
  *
- * Shruti and Mirage are part of the full install. Bonsai is the only large,
+ * Shruti and Mirage are part of the full install. The text model is the only large,
  * optional download; this is the one place a person should have to think about
  * model sizes. No model leaves the phone.
  */
@@ -65,7 +65,7 @@ export function ModelManager() {
       );
       await models.refresh();
       notifyModelsChanged();
-      setNotice('Bonsai 2 installed and verified. Questions are now answered from the approved records.');
+      setNotice('Qwen2.5 1.5B installed and verified. Questions are now answered from the approved records.');
     } catch (error) {
       // The downloader already returns one plain sentence, and it keeps the
       // partial file, so the next tap continues where this one stopped.
@@ -103,7 +103,7 @@ export function ModelManager() {
         <Card>
           <AppText variant="body" color={palette.inkMuted}>
             This build uses approved records and wellbeing tools without local speech or vision
-            models. Install the full build to add Shruti, Mirage, and the optional Bonsai text model.
+            models. Install the full build to add Shruti, Mirage, and the optional Qwen2.5 text model.
           </AppText>
         </Card>
       </View>
@@ -160,7 +160,7 @@ export function ModelManager() {
         )}
       </Card>
 
-      <AppText variant="title" style={styles.textTitle}>Bonsai 2 2B</AppText>
+      <AppText variant="title" style={styles.textTitle}>Qwen2.5 1.5B</AppText>
       <AppText variant="caption" color={palette.inkMuted}>
         Optional. Reads the approved records and explains or answers them in English, Hindi or
         Hinglish. It is not a doctor and cannot add advice of its own.
@@ -172,7 +172,7 @@ export function ModelManager() {
             <Text style={styles.textDetail}>
               {models.text
                 ? `${models.text.name} · ${formatModelSize(models.text.sizeBytes)}`
-                : '521 MB download · Apache-2.0 · PrismML Ternary Bonsai 2'}
+                : '986 MB download · Apache-2.0 · Qwen2.5-1.5B-Instruct'}
             </Text>
             <Text style={styles.textHint}>
               {models.text
@@ -195,10 +195,10 @@ export function ModelManager() {
             textDownloading && verifying
               ? `Checking model integrity ${Math.round(verifyProgress * 100)}%`
               : textDownloading
-                ? `Downloading Bonsai ${Math.round(textProgress * 100)}%`
+                ? `Downloading Qwen2.5 ${Math.round(textProgress * 100)}%`
               : models.text
-                ? 'Bonsai is installed'
-                : 'Download Bonsai 2 2B'
+                ? 'Qwen2.5 is installed'
+                : 'Download Qwen2.5 1.5B'
           }
           tone={models.text ? 'soft' : 'primary'}
           busy={textDownloading}
@@ -206,7 +206,7 @@ export function ModelManager() {
           onPress={() => void installTextModel()}
         />
         {models.text ? (
-          <ActionButton label="Remove Bonsai" tone="ghost" disabled={busy !== null} onPress={() => void remove('text')} />
+          <ActionButton label="Remove Qwen2.5" tone="ghost" disabled={busy !== null} onPress={() => void remove('text')} />
         ) : null}
       </Card>
 

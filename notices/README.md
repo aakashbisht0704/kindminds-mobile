@@ -1,28 +1,30 @@
 # Third-party notices
 
-These are the verbatim licence and notice files for the models and engine this
-app ships or downloads. They are the reviewed originals; the strings the app
-displays are generated from them, so a change here is the only way to change
-what the app shows.
+These are the verbatim licence files for the models and engine this app ships or
+downloads. They are the reviewed originals; the strings the app displays are
+generated from them, so a change here is the only way to change what the app
+shows.
 
 | File | Covers | Licence |
 | --- | --- | --- |
-| `Ternary-Bonsai-2-2B-LICENSE.txt` | PrismML Ternary Bonsai 2 2B weights (text model, downloaded by the user) | Apache-2.0 |
-| `Ternary-Bonsai-2-2B-NOTICE.txt` | Publisher NOTICE for Bonsai 2, naming the Qwen3.5-2B base model | — (retained as required) |
-| `llama.cpp-LICENSE.txt` | llama.cpp, the inference engine inside `llama.rn` 0.13.0-rc.12 | MIT |
+| `Qwen2.5-1.5B-Instruct-LICENSE.txt` | Qwen2.5-1.5B-Instruct weights (text model, downloaded by the user) | Apache-2.0 |
+| `llama.cpp-LICENSE.txt` | llama.cpp, the inference engine inside `llama.rn` | MIT |
 
-Both were downloaded unmodified from
-[`prism-ml/Ternary-Bonsai-2-2B-gguf`](https://huggingface.co/prism-ml/Ternary-Bonsai-2-2B-gguf)
-and [`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp).
+The model licence was downloaded unmodified from
+[`Qwen/Qwen2.5-1.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/blob/main/LICENSE),
+the upstream repository of the weights; the GGUF file the app downloads is a
+quantised conversion published by
+[`bartowski/Qwen2.5-1.5B-Instruct-GGUF`](https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF),
+whose model card declares Apache-2.0 and the base model above. That repository
+ships no separate NOTICE file, so there is no NOTICE text to retain; the
+attribution the app shows credits both Qwen (Alibaba Cloud) and the quantiser.
 
 ## Why this directory exists
 
-The model is Apache-2.0, and Apache-2.0 §4 requires that a recipient of a
-redistributed Work receives a copy of the licence, plus any NOTICE text the
-publisher shipped. Bonsai's NOTICE also asks for the visible sentence
-"Created using Bonsai by Prism ML.", which the app shows under
-**Prepare → Licences and attribution**. The MIT licence for llama.cpp requires
-the copyright and permission notice to travel with the binary.
+Apache-2.0 §4 requires that a recipient of a redistributed Work receives a copy
+of the licence plus any NOTICE text the publisher shipped. The MIT licence for
+llama.cpp requires the copyright and permission notice to travel with the binary.
+The app shows both under **Prepare → Licences and attribution**, offline.
 
 ## Regenerating the in-app copy
 
@@ -34,5 +36,5 @@ bun scripts/build-notices.ts
 
 Never edit that generated module by hand. `tests/attribution.test.ts` compares
 it against these files and fails on any difference, and also checks that the
-size and SHA-256 the app quotes for Bonsai match the ones the downloader
+size and SHA-256 the app quotes for the text model match the ones the downloader
 enforces.

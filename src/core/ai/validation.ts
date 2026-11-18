@@ -40,8 +40,8 @@ const MARKERS: readonly RegExp[] = [
   /<\|im_(?:start|end)\|>/i,
   /<\s*\/?\s*(?:think|thinking|reasoning|analysis)\s*>/i,
   /\b(?:as an ai|i am an ai|i'm an ai|disclaimer)\b/i,
-  // Reasoning preambles this checkpoint produces when it ignores
-  // enable_thinking=false. They are rejected, never silently stripped.
+  // A small model occasionally narrates its own reasoning before answering.
+  // That is a reasoning trace, not an answer: reject it, never strip it.
   /\bthinking process\b/i,
   /\banaly[sz]e (?:the|the provided) (?:request|question|records)\b/i,
   /^\s*(?:reasoning|thoughts?|analysis)\s*:/im,
@@ -211,12 +211,19 @@ export function validateAnswer(input: ValidateInput): ValidationOutcome {
     return { ok: false, failure: 'repetition' };
   }
 
-  // A REPHRASE must keep every step, so its sentence allowance has to scale with
-  // the record; a fixed cap would make long records impossible to pass.
-  const sentenceAllowance =
+  // A record-shaped answer must be allowed to be as long as the record it is
+  // built from: a six-step burn record cannot be covered in four sentences, and
+  // rejecting the complete answer just throws away good text. The record's own
+  // step count is the ceiling, so this cannot grow without bound. Only the
+  // shortest modes keep a fixed cap.
+  const recordSentences = records[0]?.steps.length ?? 0;
+  const stepScaled =
     mode === 'REPHRASE'
-      ? Math.max(maxSentencesFor(mode), (records[0]?.steps.length ?? 0) + 2)
-      : maxSentencesFor(mode);
+      ? Math.max(maxSentencesFor(mode), recordSentences + 2)
+      : mode === 'QUESTION'
+        ? Math.max(maxSentencesFor(mode), recordSentences + 3)
+        : maxSentencesFor(mode);
+  const sentenceAllowance = stepScaled;
   const sentenceCount = sentences(withoutListMarkers(cleaned)).length;
   if (sentenceCount > sentenceAllowance) {
     return { ok: false, failure: 'too_many_sentences', detail: `${sentenceCount} sentences` };
@@ -228,6 +235,10 @@ export function validateAnswer(input: ValidateInput): ValidationOutcome {
 
   const sourceText = records.map(recordText).join(' ');
   const allowedNumbers = normalizedNumbers(sourceText);
+  // "Step 3 means ..." is a legitimate answer to "what does step 3 mean": the
+  // number comes from the question, not from the model's imagination. Measured
+  // false rejection before this line existed.
+  if (mode === 'CLARIFY' && stepIndex) allowedNumbers.add(String(stepIndex));
   const usedNumbers = normalizedNumbers(withoutListMarkers(cleaned));
   for (const value of usedNumbers) {
     if (!allowedNumbers.has(value)) {

@@ -1,21 +1,21 @@
 /**
- * llama.rn adapter for the Bonsai 2 chat model.
+ * llama.rn adapter for the Qwen2.5-Instruct chat model.
  *
- * Runtime facts this file depends on, and the reason the dependency is pinned
- * to llama.rn 0.13.0-rc.12 (llama.cpp build 12445, commit ef3848f):
+ * Qwen2.5-1.5B-Instruct is a plain Qwen2 GGUF in Q4_K_M: no rotated weights, no
+ * custom tensor types, no special kernels. The standard llama.cpp that ships
+ * inside llama.rn 0.12.9 runs it as-is, which is the whole point of this
+ * dependency choice: no fork, no patches, nothing to maintain.
  *
- * Bonsai 2 stores its ternary weights in a Hadamard-rotated basis and records
- * that in `prism.hadamard.*` GGUF metadata. Build 10256 - the one inside
- * llama.rn 0.12.9 - knows the `qwen35` architecture and the ternary `Q2_0`
- * tensor type, but nothing about `prism.hadamard`, so it reads rotated weights
- * as if they were plain Q2_0. The model still loads and generates, and answers
- * in mixed-script gibberish. Build 12445 implements LLM_KV_PRISM_HADAMARD_* in
- * llama-arch.cpp / llama-model.cpp and answers coherently from the same bytes.
+ * `jinja: true` asks llama.cpp to apply the checkpoint's own embedded template,
+ * which is ChatML:
  *
- * That is also why `jinja: true` is not cosmetic: llama.cpp applies the
- * checkpoint's own Qwen3.5 chat template with `enable_thinking: false`, which is
- * the template's empty-think branch - not a guess at the format and not
- * post-hoc tag stripping.
+ *   <|im_start|>system ... <|im_end|>
+ *   <|im_start|>user ... <|im_end|>
+ *   <|im_start|>assistant
+ *
+ * The turn ends at `<|im_end|>`, which is also the stop sequence the app passes,
+ * and Qwen2.5-Instruct has no thinking mode to disable, so there is no
+ * `enable_thinking` plumbing here. The prompt text is never hand-assembled.
  *
  * The native binding is loaded lazily so the rest of the app still works when
  * the module is missing, the model file is absent, or the phone is too small.
@@ -150,14 +150,9 @@ export class LlamaBackend implements LocalModelBackend {
       void context
         .completion(
           {
-            // The checkpoint's own chat template, applied by llama.cpp. Thinking
-            // is disabled through the template, which is why the prompt ends
-            // with the empty `thinking` block instead of a `thinking` section
-            // that would have to be stripped afterwards.
+            // The checkpoint's own ChatML template, applied by llama.cpp.
             messages: request.messages,
             jinja: true,
-            enable_thinking: false,
-            reasoning_format: 'none',
             n_predict: request.maxTokens,
             temperature: request.temperature,
             top_p: request.topP,
@@ -169,14 +164,21 @@ export class LlamaBackend implements LocalModelBackend {
           (data) => emit(data.token ?? ''),
         )
         .then((result) => {
-          // Real numbers from this device, used to size the next deadline
-          // instead of trusting a fixed timeout.
+          // Real numbers from this device: they size the next deadline, and they
+          // are the only honest source for "how fast is this phone" claims.
           const timings = result?.timings;
           if (timings && timings.prompt_per_second > 0 && timings.predicted_per_second > 0) {
             this.measuredSpeed = {
               prefillTps: timings.prompt_per_second,
               decodeTps: timings.predicted_per_second,
             };
+            console.info('[KindMinds] inference timings', {
+              promptTokens: timings.prompt_n,
+              promptMs: Math.round(timings.prompt_ms),
+              prefillTps: Number(timings.prompt_per_second.toFixed(2)),
+              predictedTokens: timings.predicted_n,
+              decodeTps: Number(timings.predicted_per_second.toFixed(2)),
+            });
           }
           done();
         })

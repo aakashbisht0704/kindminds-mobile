@@ -61,7 +61,7 @@ export function inferModelKind(name: string): ModelKind {
   if (lower.includes('mmproj') || lower.includes('-vision') || lower.includes('projector')) return 'vision';
   if (lower.includes('mirage')) return 'vision';
   if (lower.includes('shruti') || lower.includes('whistle')) return 'voice';
-  if (lower.includes('bonsai') || lower.includes('ternary')) return 'text';
+  if (lower.includes('qwen') || lower.includes('bonsai') || lower.includes('ternary')) return 'text';
   if (lower.includes('woof')) return 'text';
   // `.cact` is the Cactus runtime format; the filename decides the role.
   if (lower.endsWith('.cact')) return lower.includes('vision') ? 'vision' : 'voice';
@@ -185,10 +185,10 @@ export function formatModelSize(bytes: number): string {
 /** Plain-language guidance shown next to each import button. */
 export const MODEL_RECOMMENDATIONS: Record<ModelKind, { title: string; detail: string; example: string }> = {
   text: {
-    title: 'Bonsai 2 2B text model',
+    title: 'Qwen2.5 1.5B text model',
     detail:
-      'PrismML Ternary Bonsai 2 2B, Q2_0 GGUF. Answers from the approved records only. 521 MB, Apache-2.0.',
-    example: 'Ternary-Bonsai-2-2B-Q2_0.gguf',
+      'Qwen2.5-1.5B-Instruct, Q4_K_M GGUF. Answers from the approved records only. 986 MB, Apache-2.0.',
+    example: 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf',
   },
   voice: {
     title: 'Shruti voice model',

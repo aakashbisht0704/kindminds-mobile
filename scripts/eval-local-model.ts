@@ -82,8 +82,9 @@ async function runServer(system: string, user: string, maxTokens: number): Promi
       top_p: 0.85,
       top_k: 20,
       repeat_penalty: 1.1,
+      // Qwen2.5-Instruct has no thinking mode: the ChatML template ends the
+      // turn at <|im_end|> and there is nothing to disable.
       stop: stopSequences(),
-      chat_template_kwargs: { enable_thinking: false },
       // The app re-processes the whole prompt for every answer (it keeps one
       // llama.rn context and no cross-request KV reuse), so measuring with a
       // warmed prompt cache would report a prefill speed the phone never sees.

@@ -13,14 +13,13 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, AppText, Card, Divider, SectionLabel } from './ui';
 import { ATTRIBUTIONS, ATTRIBUTION_SUMMARY, type Attribution } from '../core/ai/attribution';
-import { APACHE2, BONSAI_NOTICE, LLAMACPP } from '../core/ai/licences.generated';
+import { APACHE2, LLAMACPP } from '../core/ai/licences.generated';
 import { palette, space } from '../theme';
 
 type LicenceText = { id: string; title: string; body: string };
 
 const LICENCE_TEXTS: readonly LicenceText[] = [
-  { id: 'apache2', title: 'Apache License 2.0 (Bonsai 2, Shruti, Mirage)', body: APACHE2 },
-  { id: 'notice', title: 'Bonsai 2 NOTICE (Prism ML)', body: BONSAI_NOTICE },
+  { id: 'apache2', title: 'Apache License 2.0 (Qwen2.5, Shruti, Mirage)', body: APACHE2 },
   { id: 'mit', title: 'MIT licence (llama.cpp)', body: LLAMACPP },
 ];
 

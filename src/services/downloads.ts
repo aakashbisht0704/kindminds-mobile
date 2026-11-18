@@ -2,7 +2,7 @@
  * First-launch downloads.
  *
  * Models are large, so they are downloaded once during onboarding and kept in
- * the app's private storage. Bonsai is 546,689,504 bytes: a phone on a mobile connection
+ * the app's private storage. The text model is 986,048,768 bytes: a phone on a mobile connection
  * will lose the socket at least once on the way, so the downloader keeps the
  * partial file, asks the server for the rest with an HTTP Range request, and
  * only swaps the result into place when the file is complete. An interrupted

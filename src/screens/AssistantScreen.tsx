@@ -3,7 +3,7 @@
  *
  * The assistant is a conversation, not a dashboard. It routes everyday needs to
  * the app's real tools (breathing, SOS, map, mesh, preparedness) and answers
- * safety questions only from the approved offline records. Bonsai can rephrase a
+ * safety questions only from the approved offline records. The text model can rephrase a
  * retrieved record on request; it is never the source of the steps.
  */
 
@@ -294,7 +294,7 @@ export function AssistantScreen({
             {inputError}
           </Text>
         ) : null}
-        <Text style={styles.privacy}>Approved records only. Nothing leaves this phone.</Text>
+        <Text style={styles.privacy}>Approved records only.</Text>
       </View>
 
       <BreathingExercise visible={breathing} onClose={() => setBreathing(false)} />

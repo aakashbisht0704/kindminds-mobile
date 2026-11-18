@@ -13,8 +13,8 @@ without a network, a SIM, or a server:
 - a BitChat-derived mesh engine with a native Android BLE peripheral + GATT
   server, not just scanning
 - offline first-aid, water, shelter, hazard, and wellbeing knowledge base
-- on-device question answering with **PrismML Ternary Bonsai 2 2B** (Q2_0 GGUF)
-  through `llama.rn`
+- on-device question answering with **Qwen2.5-1.5B-Instruct** (Q4_K_M GGUF)
+  through `llama.rn` and stock llama.cpp
 - on-device speech-to-text with **Shruti** through the native Cactus 4.1 bridge
 - on-device photo description with **Mirage** through the native Cactus 4.1 bridge
 - guided breathing, mood check-in, and crisis routing
@@ -35,105 +35,100 @@ assistant surfaces. The last slide installs:
 | Local area map | on | ~8 MB | bounded MBTiles pack, z8–15 + overzoom |
 | Shruti voice input | included | 28 MB | `udgamlabs/Shruti` (`shruti.cact`) |
 | Mirage vision | included | 21 MB | `Cactus-Compute/mirage` (`mirage.cact`) |
-| Bonsai 2 text | later | 521 MB | `prism-ml/Ternary-Bonsai-2-2B-gguf` (`Q2_0`) |
+| Qwen2.5 text | later | 986 MB | `bartowski/Qwen2.5-1.5B-Instruct-GGUF` (`Q4_K_M`) |
 
 Shruti and Mirage are packaged inside the full APK; onboarding copies them into
-app storage, so they do not need a connection. Bonsai is deliberately absent
-from the APK: it is an optional download from **Prepare → On-device models**.
-Shruti and Mirage run through the official **Cactus 4.1** engine, linked into
-the app's native library (`android/app/src/main/cpp/cactus_bridge.cpp`), because
-the `cactus-react-native` wrapper does not implement the Whistle (Shruti) or
-Mirage architectures. Bonsai runs through `llama.rn` with the checkpoint's own
-chat template. Downloads are atomic: an interrupted install never destroys a
+app storage, so they do not need a connection. The text model is deliberately
+absent from the APK: it is an optional download from **Prepare → On-device
+models**. Shruti and Mirage run through the official **Cactus 4.1** engine,
+linked into the app's native library
+(`android/app/src/main/cpp/cactus_bridge.cpp`), because the
+`cactus-react-native` wrapper does not implement the Whistle (Shruti) or Mirage
+architectures. The text model runs through `llama.rn` with the checkpoint's own
+ChatML template. Downloads are atomic: an interrupted install never destroys a
 working model or map.
 
-## The text model: PrismML Ternary Bonsai 2 2B
+## The text model: Qwen2.5-1.5B-Instruct Q4_K_M
 
 | Fact | Value |
 | --- | --- |
-| Repository | `prism-ml/Ternary-Bonsai-2-2B-gguf` |
-| File | `Ternary-Bonsai-2-2B-Q2_0.gguf` |
-| Bytes | 546,689,504 (~521 MB) |
-| SHA-256 | `c2893fa6f951daee8b7263d5f49b455e57989ef56417a22125b03566dc560650` |
+| Repository | `bartowski/Qwen2.5-1.5B-Instruct-GGUF` |
+| File | `Qwen2.5-1.5B-Instruct-Q4_K_M.gguf` |
+| Bytes | 986,048,768 (~941 MiB) |
+| SHA-256 | `1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370` |
 | Licence | Apache-2.0 (commercial use permitted) |
-| Base model | `Qwen/Qwen3.5-2B` |
-| GGUF architecture | `qwen35`, 1,881,825,088 parameters, context 262,144 |
-| Quantisation | 151 tensors of custom type 42 (`Q2_0`), ternary weights |
+| Upstream weights | `Qwen/Qwen2.5-1.5B-Instruct` |
+| GGUF | `qwen2` architecture, Q4_K_M, standard llama.cpp quantisation |
+| Chat template | ChatML, embedded in the GGUF |
 
-The digest above is the publisher's, from the `SHA256SUMS` file in the same
-repository, and it matches a file downloaded and hashed independently on the
-host. The downloader verifies both size and digest, and deletes a mismatched
-file instead of loading it.
+The size is the HTTP `Content-Length` of the download URL and the `size` the
+Hugging Face file listing reports, both 986,048,768 bytes; the digest is that
+file's LFS object id in the repository, and it matched a download hashed
+independently on the host. The downloader verifies both size and digest and
+deletes a mismatched file instead of loading it.
 
-Bonsai is a *vision-language* checkpoint. Only its text path is wired: the
-`mmproj` projector is deliberately **not** downloaded, and nothing in the app
-asks it to look at an image. Mirage owns vision.
+This model was chosen for steady-state behaviour, not for a benchmark headline:
+it is a plain Qwen2 GGUF with a standard quantisation, so the stock llama.cpp
+that ships inside `llama.rn` runs it. There is no rotated-weight basis, no custom
+tensor type, no kernel work, and nothing to keep patched. On the host benchmark
+below it is roughly **10× faster** than the ternary 2B it replaced at the same
+prompt size.
 
-A 521 MB download does not always survive a mobile connection in one piece, so
-Bonsai is fetched in a way that can be resumed. The bytes land in `…gguf.part`, a
-dropped socket is retried three times from the bytes already on disk, and a tap
-on **Download Bonsai 2 2B** after a failure asks the server for the rest with an
-HTTP `Range` request instead of starting over. Free space is checked before the
-transfer starts, the `.part` file is kept after a failure so the next tap
-continues from it, and the in-place rename only happens when the file matches
-the expected size. The digest is then checked with an async chunked SHA-256 that
-keeps the UI responsive: a synchronous 521 MB hash froze Hermes for minutes.
-The same path is used for the map pack.
+A ~986 MB download does not always survive a mobile connection in one piece, so
+the text model is fetched in a way that can be resumed. The bytes land in
+`…gguf.part`, a dropped socket is retried three times from the bytes already on
+disk, and a tap on **Download Qwen2.5 1.5B** after a failure asks the server for
+the rest with an HTTP `Range` request instead of starting over. Free space is
+checked before the transfer starts, the `.part` file is kept after a failure so
+the next tap continues from it, and the in-place rename only happens when the
+file matches the expected size. The digest is then checked with an async chunked
+SHA-256 that keeps the UI responsive. The same path is used for the map pack.
 
-## Why `llama.rn` 0.13.0-rc.12 (llama.cpp b12445) is required
+### Prompt format
 
-This is the single most expensive fact in the repository: it cost a week to
-find, and reinstalling the dependency the obvious way reproduces it.
+The model's own ChatML template is applied by llama.cpp (`jinja: true`), so the
+prompt on the wire is the template the checkpoint was trained with, never a
+hand-assembled string:
 
-Bonsai's ternary weights are stored in a **Hadamard-rotated basis**. The GGUF
-says so itself, in `prism.hadamard.*` metadata (block 512, normalised
-Sylvester-Walsh-Hadamard transform, explicit ±1 signs, 150 rotated tensors, and
-an inverse transform for `token_embd` with a tied output tensor).
+```text
+<|im_start|>system ... <|im_end|>
+<|im_start|>user ... <|im_end|>
+<|im_start|>assistant
+```
 
-| llama.rn | Bundled llama.cpp | `PRISM`/`prism.hadamard` support | Behaviour |
-| --- | --- | --- | --- |
-| 0.12.9 | b10256 (commit `6c8dcaa`) | none | Model loads and generates **mixed-script gibberish** (`"formerlyamiconique…"`, stray Chinese tokens) |
-| 0.13.0-rc.12 | b12445 (commit `ef3848f`) | `LLM_KV_PRISM_HADAMARD_*` in `llama-arch.cpp` / `llama-model.cpp` | Answers **"4"** to "What is 2+2?" and answers the first-aid records coherently |
+`<|im_end|>` is the end-of-turn marker and is passed as the only stop sequence.
+Qwen2.5-Instruct has **no thinking mode**, so there is nothing to disable: the
+adapter sets no `enable_thinking` and no reasoning-format flags at all. A model
+that still emits a reasoning preamble or a template token is caught by the
+validator and rejected rather than cleaned up after the fact.
 
-Build 10256 does know the `qwen35` architecture and the type-42 `Q2_0` tensor
-type, which is exactly why the failure is confusing: the model *loads* and the
-sampler *runs*. It simply reads rotated weights as if they were plain Q2_0.
-There is no runtime error to search for.
+## The runtime: standard `llama.rn`, no fork
 
-The file itself is sound: official `ggml-org/llama.cpp` build b11556
-(win-cpu-x64) answers coherently from the identical 546,689,504 bytes. No
-native fork or patch exists in this repository, and none is needed once the
-dependency is current.
+The app runs **`llama.rn` 0.12.9**, the stable release, with the publisher's
+prebuilt Android libraries. This repository contains no native patch, no
+vendored llama.cpp and no custom kernels, and `android/gradle.properties` sets
+no build-from-source flags. `node_modules` is the published package.
 
-### Upgrade procedure, exactly
+For the record, so nobody re-opens this door: an earlier revision used a ternary
+Q2_0 2B checkpoint whose weights are stored in a Hadamard-rotated basis. That
+model needed `llama.cpp` build 12445 (from `llama.rn` 0.13.0-rc.12) because build
+10256 silently reads rotated weights as plain Q2_0 and emits mixed-script
+gibberish from a model that loads and runs without error. It worked once the
+dependency was pinned, but it was slow (about 1/10th of the current model at the
+same prompt size) and it made the runtime a thing to maintain. It was dropped
+for exactly that reason, and the app now matches the model by name only: a
+leftover GGUF from that era is never auto-selected, because the standard runtime
+cannot decode it and producing nonsense is worse than showing the record.
 
-Everything below was learned the hard way. Run it in this order.
+If `bun install` cannot run llama.rn's postinstall on your machine (it shells out
+to `tar` and has failed on Windows with `Cannot connect to C:`), extract the
+release archive instead:
 
-1. **Remove the old package before installing.** `bun add llama.rn@0.13.0-rc.12`
-   on top of 0.12.9 leaves a merged tree with ~95 stale files from 0.12.9's
-   patched `cpp/` directory. Those shadow the vendored headers and every native
-   build then dies with `unknown type name ggml_tensor`.
-
-   ```sh
-   rm -rf node_modules/llama.rn && bun install
-   ```
-
-2. **Use the publisher's prebuilt libraries.** The package's postinstall shells
-   out to `tar` with a `C:` path on Windows and fails with
-   `Cannot connect to C:`. Extract the release archive by hand and check it:
-
-   ```sh
-   curl -L https://github.com/mybigday/llama.rn/releases/download/v0.13.0-rc.12/llama-rn-android-jni-libs.tar.gz -o rnlibs.tgz
-   # sha256 e6ebcc6c2627a6bf67be39e149260d8063d5b3672a5d56333ee6ec8294fffa61
-   tar --force-local -xzf rnlibs.tgz -C node_modules/llama.rn
-   ```
-
-3. **Do not build llama.cpp from source.** rc.12 ships
-   `rnllamaBuildFromSource=true` in `node_modules/llama.rn/android/gradle.properties`.
-   Left alone, Gradle compiles the entire vendored tree and then dies on Windows
-   with a `MAX_PATH` error (`mkdir(...ggml-cpu/tiled)`). `android/gradle.properties`
-   in this repo sets `rnllamaBuildFromSource=false`, and every documented build
-   command also passes `-PrnllamaBuildFromSource=false`.
+```sh
+curl -L https://github.com/mybigday/llama.rn/releases/download/v0.12.9/llama-rn-android-jni-libs.tar.gz -o rnlibs.tgz
+# sha256 CDA945A7C0ED075A0B028C1C3C6F5B668532EB18B069ECC4793ED7CA6CDB65AC (as downloaded here)
+tar --force-local -xzf rnlibs.tgz -C node_modules/llama.rn
+```
 
 The Shruti/Mirage/Cactus side is untouched by any of this and still builds
 against the same NDK.
@@ -242,24 +237,21 @@ queries route to grounding, grief, sleep, anger, or loneliness records.
 
 | Role | Model | Format | Licence |
 | --- | --- | --- | --- |
-| Text | PrismML **Ternary Bonsai 2 2B** | GGUF Q2_0, 521 MB, downloaded | Apache-2.0 |
+| Text | **Qwen2.5-1.5B-Instruct** (Bartowski GGUF) | Q4_K_M, 986 MB, downloaded | Apache-2.0 |
 | Voice | Udgam **Shruti** | 16 kHz WAV → text, `.cact`, 28 MB | Apache-2.0 |
 | Vision | Cactus **Mirage** | image → text/scene, `.cact`, 21 MB | Apache-2.0 |
-| Runtime | **llama.cpp** b12445 via `llama.rn` 0.13.0-rc.12 | native lib | MIT |
+| Runtime | **llama.cpp** via `llama.rn` 0.12.9, unpatched | prebuilt native libs | MIT |
 
-Apache-2.0 permits commercial use, which is a deliberate change from the
-previous text model (Woof 2B, CC BY-NC 4.0). Prism ML's requested attribution
-sentence — *"Created using Bonsai by Prism ML."* — and the copyright lines of
-all five components are shown in the app under **Prepare → Licences and
-attribution**, and the verbatim licence texts ship inside the binary so they are
-readable with no network. The same originals live in
-[`notices/`](notices/README.md) in the repository; the in-app strings are
-generated from them by `bun scripts/build-notices.ts`, and a test fails if the
-two ever disagree.
+All four are Apache-2.0 or MIT, so commercial use needs no separate licence.
+The copyright lines and the full licence texts for every component are shown in
+the app under **Prepare → Licences and attribution**, offline, and the same
+verbatim originals live in [`notices/`](notices/README.md). The in-app strings
+are generated from those files by `bun scripts/build-notices.ts`, and a test
+fails if the two ever disagree.
 
 The Cactus runtime only ships **arm64-v8a** Android libraries, so the **shipped**
-full AI build is arm64-only. An x86_64 debug build still exercises Bonsai
-(`llama.rn` has x86_64 libraries); Shruti and Mirage stay unavailable there.
+full AI build is arm64-only. An x86_64 release build still exercises the text
+model (`llama.rn` has x86_64 libraries); Shruti and Mirage stay unavailable there.
 
 ## Benchmarks
 
@@ -267,144 +259,220 @@ Everything in this section was measured, not estimated, and the hardware is
 named because these numbers do not transfer between machines.
 
 - **Host A** — Intel Core i5-13450HX (10 cores / 16 threads), 16 GB RAM,
-  Windows, `llama.cpp` **b11556** `win-cpu-x64` (CPU only, `-t 4`),
-  `llama-server -c 2048`, prompt cache **disabled** so every prompt is processed
-  end to end, exactly as the app pays for it. Model: the 546,689,504-byte
-  `Q2_0` file whose digest is quoted above.
+  Windows, `llama.cpp` **b11556** `win-cpu-x64` (CPU only), `llama-server -c
+  2048`, prompt cache **disabled** so every prompt is processed end to end,
+  exactly as the app pays for it. Model: the 986,048,768-byte Q4_K_M file.
 - **Emulator B** — Android emulator **x86_64**, AVD `Medium_Phone_API_36.1`
-  (4 GB, `-gpu swiftshader_indirect`), release APK, same model file.
+  (4 GB, `-gpu swiftshader_indirect`), full release APK, same file.
 - **Phone C** — **no arm64 phone was available**. There are no phone numbers in
   this repository.
 
-### Routed batch: what the app does with ordinary questions
+Prompt size matters more than anything else here, so for reference: the app's
+real prompts are ~450 tokens (system rules plus one or two records), and every
+number below is for that size unless it says otherwise.
 
-Ten queries through `planAssistantRequest()` → the model → `validateAnswer()`,
-all on Host A. Mode is what the router chose, language is what was detected.
+### Threads and batch size (Host A)
+
+Four configurations, one fresh `llama-server` each, the app's own prompt run
+through `scripts/eval-local-model.ts` so the measured path is the shipped one.
+`pwsh -File scripts/bench-matrix.ps1` reproduces the table.
+
+| Threads | Batch | Prefill | Decode | Answer | Latency | Peak RSS |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 128 | 6.9 s (65.4 tok/s) | 15.4 tok/s | 43 tok | 9.7 s | 1683 MB |
+| 2 | 256 | 6.9 s (65.2 tok/s) | 14.8 tok/s | 62 tok | 11.1 s | 1700 MB |
+| 4 | 128 | 3.6 s (123.5 tok/s) | 20.3 tok/s | 42 tok | 5.7 s | 1684 MB |
+| 4 | 256 | 3.6 s (125.9 tok/s) | 22.0 tok/s | 43 tok | 5.6 s | 1701 MB |
+
+- **Threads: 4 wins clearly.** Prefill is 1.9× faster than 2 threads and decode
+  is ~1.4× faster, which is what `DEFAULT_LLAMA_CONFIG` already uses. On a phone
+  with big.LITTLE cores this is a four-thread default, not "all cores"; a 2+2
+  split is the phone-specific experiment to run on real hardware.
+- **Batch: no measurable difference.** 128 vs 256 is 0.3% apart on prefill and
+  within run-to-run noise on decode, and 128 saves ~17 MB peak RSS. The app keeps
+  `n_batch: 256` because the difference is noise and a larger batch helps longer
+  prompts; there is no evidence here to justify churn.
+- **Peak RSS is `llama-server` with its default 4 slots**, so it overstates what
+  the app needs. The app's own single-slot context measured **1.17 GB PSS** on
+  the emulator (below).
+
+### Routed batch: what the app does with ordinary questions (Host A)
+
+Ten queries through `planAssistantRequest()` → the model → `validateAnswer()`.
+Two consecutive runs accepted **7/10** and **8/10** (the `panic attack` answer
+varied between runs); the table is the first run.
 
 | Query | Mode | Sources | Prefill tok/s | Decode tok/s | Tokens | Verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| heavy bleeding | QUESTION | `bleeding` | 11.5 | 7.3 | 59 | accepted |
-| someone is not breathing | SITUATION | `cpr`, `breathing` | 11.0 | 7.1 | 74 | accepted |
-| how do I treat a burn | QUESTION | `burns` | 10.9 | 7.2 | 74 | accepted |
-| how to treat heat stroke | QUESTION | `heat` | 11.0 | 7.2 | 60 | accepted |
-| earthquake what to do | QUESTION | `earthquake` | 11.4 | 7.3 | 58 | accepted |
-| no clean water to drink | QUESTION | `water`, `sanitation` | 11.6 | 8.0 | 18 | **rejected** `missing_step` (1/3) |
-| panic attack | QUESTION | `panic`, `grounding` | 12.1 | 7.9 | 62 | accepted |
-| child is very scared | QUESTION | `children`, `panic` | 12.3 | 8.2 | 30 | accepted |
-| खून बहुत बह रहा है | QUESTION (hi) | `bleeding` | 12.2 | 8.2 | 56 | **rejected** `ungrounded` |
-| khoon band nahi ho raha | QUESTION (hinglish) | `bleeding`, `sleep` | 12.2 | 7.7 | 40 | **rejected** `missing_step` (2/3) |
+| heavy bleeding | QUESTION | `bleeding` | 131.5 | 23.2 | 34 | accepted |
+| someone is not breathing | SITUATION | `cpr`, `breathing` | 139.5 | 22.8 | 101 | accepted |
+| how do I treat a burn | QUESTION | `burns` | 144.1 | 22.2 | 88 | accepted |
+| how to treat heat stroke | QUESTION | `heat` | 130.4 | 22.0 | 75 | accepted |
+| earthquake what to do | QUESTION | `earthquake` | 130.3 | 22.9 | 17 | accepted |
+| no clean water to drink | QUESTION | `water`, `sanitation` | 131.0 | 22.2 | 75 | **rejected** `missing_step` (2/3) |
+| panic attack | QUESTION | `panic`, `grounding` | 131.4 | 21.8 | 76 | **rejected** `missing_step` (1/3) |
+| child is very scared | QUESTION | `children`, `panic` | 133.0 | 22.7 | 50 | accepted |
+| Devanagari query | QUESTION (hi) | `bleeding` | 130.2 | 21.3 | 140 | **rejected** `ungrounded` |
+| khoon band nahi ho raha | QUESTION (hinglish) | `bleeding`, `sleep` | 130.6 | 20.6 | 74 | accepted |
 
-**7 of 10 accepted.** The three rejections are the safety net working, and the
-interesting part is *why*:
+The rejections are the safety net, and the reasons are worth reading:
 
-- `no clean water to drink`: the model answered in 18 tokens ("Boil for 1 minute
-  or let it settle and filter before disinfecting") and covered one third of the
-  approved steps. The record is shown instead, which says more.
-- The Devanagari query produced 64 tokens of **mangled Hindi** — understandable
-  to a human maybe, but `फिंग से अर्थी` is not the approved instruction — and the
-  vocabulary gate refused it. Hindi is the weakest of the three languages for
-  this checkpoint.
-- The Hinglish query produced a correct English answer that dropped two of the
-  three required steps.
+- `no clean water to drink`: the model merged the water record with a sanitation
+  record and covered two of the three required steps. The record is shown
+  instead, which says more.
+- `panic attack`: covered only one distinctive step in one of the two runs, and
+  passed the other time. This model is less consistent than a single run
+  suggests, which is exactly why the validator, not the model, decides.
+- The Devanagari query produced **mangled Hindi** and the vocabulary gate refused
+  it. See the language section.
 
-### The four prompt modes, one query each
+Prefill on the host ranged **106–160 tok/s** across the session depending on what
+else the machine was doing, so treat prefill as "about 3–6 s for a real prompt"
+and decode as "about 21–26 tok/s" rather than as precise constants.
+
+### The four prompt modes, one query each (Host A)
 
 | Mode | Query | Sources | Prefill tok/s | Decode tok/s | Tokens | Verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| `REPHRASE` | heavy bleeding (record tapped) | `bleeding` | 12.4 | 8.2 | 56 | **rejected** `missing_step` (3/6) |
-| `QUESTION` | how do I treat a burn | `burns` | 12.8 | 8.2 | 73 | accepted |
-| `CLARIFY` | what does step 3 mean (step 3) | `bleeding` | 12.6 | 8.2 | 20 | accepted |
-| `SITUATION` | someone is not breathing | `cpr`, `breathing` | 12.7 | 8.2 | 74 | accepted |
+| `REPHRASE` | heavy bleeding (record tapped) | `bleeding` | 113.8 | 22.1 | 97 | accepted |
+| `QUESTION` | how do I treat a burn | `burns` | 144.1 | 22.2 | 88 | accepted |
+| `CLARIFY` | what does step 3 mean (step 3) | `bleeding` | 113.2 | 22.6 | 20 | accepted |
+| `SITUATION` | someone is not breathing | `cpr`, `breathing` | 112.2 | 21.4 | 104 | accepted |
 
-`REPHRASE` has the strictest gate by design: it must keep **every** step, and a
-2B model asked for "plainer words" summarises. That rejection is correct — the
-record is already plain — but it means the rephrase button frequently ends up
-showing the record, which is honest and cheap and the UI says which happened.
+All four modes answer. `REPHRASE` needed a prompt fix for this model: asked for
+"one sentence per step" it wrote two sentences and dropped steps; asked for a
+numbered list it reproduced all six steps in order, three runs out of three. A
+1.5B model copies a numbered structure; it does not count to six.
 
-### Language variants
+### Language variants (Host A)
 
 | Language | Query | Prefill tok/s | Decode tok/s | Tokens | Verdict |
-| --- | --- | ---: | ---: | ---: | --- |
-| Hindi (Devanagari) | खून बहुत बह रहा है | 12.8 | 8.3 | 64 | **rejected** `ungrounded` |
-| Hinglish | khoon band nahi ho raha | 12.7 | 8.3 | 33 | accepted |
+| --- | --- | --- | ---: | ---: | --- |
+| Hindi (Devanagari) | "खून बहुत बह रहा है" | 112.5 | 21.8 | 103 | **rejected** `ungrounded` |
+| Hinglish | khoon band nahi ho raha | 105.9 | 20.7 | 33 | accepted |
+
+**This is the weakest part of the integration, and it is a model limit, not a
+plumbing bug.** Retrieval handles Devanagari correctly — both queries reach the
+`bleeding` record — but Qwen2.5-1.5B Q4_K_M cannot reliably *write* safety
+instructions in Devanagari: asked for Hindi it produced nonsense (Spanish-looking
+words and invented compounds) or answered in English, which the language gate then
+refused. Hinglish "passes", but the answer is often plain English, because a
+Latin-script check cannot tell Hinglish from English.
+
+The honest consequences, all visible in the product: a Hindi user gets the
+approved record verbatim (correct, but in English) and the app says why the model
+answer was withheld. The right fix is not a bigger prompt — it is reviewed Hindi
+translations of the ~28 records served directly as records, so no model
+translation ever touches safety text. That is future work, not something to paper
+over with generation.
 
 ### What the validator fixes were worth
 
-The first batch of this change (same code, same model, same machine) accepted
-**4 of 10**. Two validator defects were found by reading the rejected answers
-rather than trusting the failure codes:
+Reading the rejected answers, not the failure codes, found four defects that were
+throwing away correct text.
 
 | Defect | Symptom | Fix | Effect |
 | --- | --- | --- | --- |
-| Sentence counting treated list markers as sentence ends, and numbered steps as invented numbers | heat stroke and panic attack rejected `too_many_sentences` although the text was correct | strip leading `1.` / `-` markers before counting sentences and numbers | 2 answers recovered |
-| Step-order check scanned the whole answer for each step, so a later step matched an earlier step's word ("rescue **breaths**" matched "**breathing**") | CPR rejected `step_order` | each step is searched for *after* the previous step's match | 1 answer recovered |
+| Sentence counting treated list markers as sentence ends, and numbered steps as invented numbers | a correct numbered answer rejected `too_many_sentences` | strip leading `1.` / `-` markers before the sentence and number checks | numbered answers accepted |
+| Sentence allowance did not scale with the record, so a six-step record could never fit | burn answer with seven good sentences rejected | `QUESTION` allowance is now `max(5, steps + 3)`, `REPHRASE` is `steps + 2`: the record is the ceiling | burn answer accepted |
+| Step-order check matched a later step to an earlier step's word ("rescue **breaths**" vs "**breathing**") | correctly ordered CPR answer rejected `step_order` | each step is searched for *after* the previous match | CPR answer accepted |
+| `CLARIFY` rejected answers that name the step they explain ("Step 3 means ...") as an invented number | `new_number: 3` on a perfect answer | the requested step index is allowed for `CLARIFY` | CLARIFY 3/3 accepted |
 
-Neither fix relaxes the safety contract: a scrambled CPR answer is still
-rejected, a numbered list still cannot introduce a number the record does not
-contain, and the vocabulary, step-survival, language and unsafe-advice gates are
-untouched. Both have tests.
+None of these relaxes the safety contract: a scrambled answer is still rejected,
+a numbered list still cannot introduce a number the record does not contain, a
+`CLARIFY` answer still cannot add a dose, and the vocabulary, step-survival,
+language and unsafe-advice gates are untouched. Every fix has a test.
+
+### Android emulator: the honest numbers (Emulator B)
+
+Measured in the app, from `logcat -s ReactNativeJS:*` (the adapter logs the real
+timings llama.cpp reports) and `dumpsys meminfo`, on the full x86_64 release APK:
+
+| Measurement | Value |
+| --- | --- |
+| Model download, in-app | 986,048,768 bytes, ~4 min (~4–6 MB/s over the emulator's NAT) |
+| Digest verification, in-app | ~14 min (chunked SHA-256 over 986 MB; the UI stays responsive) |
+| Context load | ~5–6 s with the file in page cache |
+| Prompt | 450 tokens |
+| Prefill | **73.8 s (6.1 tok/s)** |
+| Decode | **60 tokens at 2.43 tok/s** (~25 s) |
+| Total generation | **~98 s** |
+| Peak app memory | **1.17 GB PSS / ~1.35 GB RSS** |
+
+Two things follow, and both are uncomfortable:
+
+1. **The emulator cannot be a performance proxy.** The same prompt and model take
+   3.6 s of prefill on the host and 73.8 s here, a 20× penalty, because x86_64
+   gets no NEON and this AVD has no useful SIMD path for the quantisation.
+2. **~98 s of inference sits right against the 120 s deadline.** In one run the
+   deadline fired first (`reason: 'timeout'`) and the record was shown; in another
+   the answer arrived. A real phone should be far quicker, but this is the
+   measured reason the first-answer budget policy changed.
+
+The emulator did prove the thing it was there to prove: the model loads, the
+prompt tokenises to 450 tokens, and the app generated **real text on device** —
+"Put a cloth or clean pad directly on the wound. Press down hard with both hands
+and keep pressing. If blood soaks through, add another pad on top..." — which
+passed validation and was shown above the record.
+
+### Deadline policy, changed because of the measurements
+
+The old rule estimated a deadline from conservative defaults on an unmeasured
+device, which gave ~48 s for a 450-token prompt. On hardware slower than the
+assumption that is the worst outcome available: the answer is abandoned just
+before it arrives, and the device never measures itself, because the measurement
+is only recorded on a completed answer. So the first answer on an unmeasured
+device now gets the full 120 s cap, and every later answer uses this device's own
+measured rates. That is why the emulator produced an answer here instead of a
+timeout, and it is the difference between "slow" and "broken" on a weak phone.
 
 ### What the two outcomes look like on screen
 
 **Accepted.** Tapping **Heavy bleeding** on a device that answers in time shows a
-card with the record title, the model's answer, and the approved sources that
-produced it. From the measured host run above, the card reads:
+card with the record title and its six numbered steps, then a
+**From the approved records** block with the model's answer underneath. Captured
+on the x86_64 emulator, the answer block read:
 
-> **Severe bleeding** — sources: `bleeding` — QUESTION
->
-> Put a cloth or clean pad directly on the wound and press down hard with both
-> hands. If blood soaks through, add another pad on top. Keep pressing for at
-> least 10 minutes before looking. If bleeding will not stop, press the artery
-> above the wound with a finger.
->
-> *In plain words · from the approved record*
+> Put a cloth or clean pad directly on the wound. Press down hard with both hands
+> and keep pressing. If blood soaks through, add another pad on top. Lay the
+> person flat and lift the injured limb above heart level if you can. Keep
+> pressing for at least 10 minutes before looking.
 
-**Timed out.** Captured on the x86_64 emulator (release APK, 119 MB, 4 GB AVD):
-the record card renders with its six numbered steps and its two red `Do not`
-warnings, and beneath them the card says, in the product's own words:
+That text was generated on the device, passed every validator gate, and was shown
+with the record still visible above it, so the person can read the approved
+wording even when the model's phrasing is thinner.
+
+**Timed out.** On the same AVD with the previous deadline policy, the record card
+rendered with its steps and red `Do not` warnings and beneath them the card said:
 
 > *The local model took too long on this phone, so only the approved record is
 > shown.*
 
-The **Say it in plain words** action stays available for a retry. The logcat
-trace for that capture is unambiguous about what happened: `RNLlama` loaded the
-546 MB file, initialised the context in ~12 s (file already in page cache),
-started `loadPrompt`, and then `nextToken: Decoding Interrupted` when the derived
-deadline expired after ~48 s, followed by
+The logcat trace was unambiguous: `RNLlama` loaded the file, initialised the
+context, started `loadPrompt` with 450 tokens, then `nextToken: Decoding
+Interrupted` when the deadline expired, followed by
 `[KindMinds] answer not shown { mode: 'QUESTION', reason: 'timeout', failure: null }`.
 Nothing partial was shown, and the record was never replaced.
 
-That is the designed behaviour on hardware that is too slow, and it is also the
-honest warning about the 120 s cap: an x86_64 emulator is ~10× slower than a
-phone here, but a low-end phone with a cold model may still hit the cap. The
-screenshot is not committed, because this repository does not commit screenshots
-(see `docs/README.md`).
-
-### Emulator caveat
-
-On Emulator B, the 546 MB Q2_0 file runs at roughly **1–2.5 tok/s prefill and
-2–7 tok/s decode**. x86_64 has no NEON and the Q2_0 matmul is pathological
-there, so a ~500-token prompt does not finish inside the app's 120 s cap: in the
-capture above the derived deadline (48 s for that prompt on unknown hardware)
-expired first. The emulator is a correctness harness — it proves the model
-loads, the prompt tokenises, decoding starts, and the safety/fallback path
-behaves on a real Android runtime — and it is **not** a performance proxy for a
-phone. It also cannot run Shruti or Mirage, because Cactus publishes no x86_64
-library.
+Both outcomes are the designed behaviour, and together they are the honest
+warning about the deadline: the emulator sits at ~98 s of inference against a
+120 s cap, so on a slow phone the record fallback is the realistic outcome. The
+screenshots are not committed, because this repository does not commit
+screenshots (see `docs/README.md`).
 
 ### Not measured
 
 - arm64 phone prefill/decode, first-token latency, RAM ceiling on 2–3 GB
-  devices, thermal throttling, battery cost.
-- **An accepted (non-fallback) answer in the app on any Android device.** On the
-  x86_64 emulator the deadline expires first, which is the correct outcome but
-  means the on-device accepted path is only proven by the host harness, which
-  uses the app's exact prompts and validator.
-- Download behaviour on a flaky mobile connection at 521 MB (the resume logic is
-  covered by unit tests and by the map pack, not by a real 4G transfer).
-- Whether the derived deadline (20 s – 120 s) is generous enough on a slow
-  phone. The honest fallback there is the approved record.
-
+  devices, thermal throttling, battery cost. The 1.17 GB PSS on the emulator is
+  the only on-device memory number that exists, and an emulator is not a phone.
+- Whether a real phone finishes inside the 120 s cap. The emulator takes ~98 s and
+  the host 3.6 s of prefill; a phone should sit between them, but nobody has
+  measured it.
+- Download behaviour on a flaky mobile connection at 986 MB (the resume logic is
+  covered by unit tests and by the map pack, not by a real 4G transfer). On the
+  emulator the download took ~4 minutes and the digest check ~14 minutes.
+- Hindi/Devanagari generation quality above the refusal threshold. It is measured
+  as unreliable, not as good.
 ## Build
 
 Requirements: Node 20+, Bun, JDK 21, Android SDK 36, NDK 27.x, CMake 3.22.
@@ -422,18 +490,18 @@ Release build with the JS bundle embedded:
 
 ```sh
 cd android
-./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a -PrnllamaBuildFromSource=false
+./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a
 ```
 
 ### Lite and full variants
 
 | Variant | Size | Contents |
 | --- | ---: | --- |
-| Full arm64 | 115 MB | map, Chat, SOS, records, bundled Shruti + Mirage, optional Bonsai |
+| Full arm64 | 103 MB | map, Chat, SOS, records, bundled Shruti + Mirage, optional Qwen2.5 |
 | Lite arm64 | 29 MB | map, Chat, SOS, records, wellbeing; no model weights |
 | Lite x86_64 | 82 MB | emulator/UI build; no model weights or AI native libs |
 
-A **full** (non-lite) `x86_64` build is the way to exercise Bonsai in the
+A **full** (non-lite) `x86_64` build is the way to exercise the text model in the
 emulator: `llama.rn` ships x86_64 libraries, so the text model downloads, loads
 and answers there, while the Cactus bridge compiles to an empty stub. That makes
 Shruti and Mirage unavailable on the emulator, but the whole answer pipeline is
@@ -452,7 +520,7 @@ tools. The full APK is the one to install on a phone.
 cd android
 rm -rf app/build/generated/assets/createBundleReleaseJsAndAssets app/build/intermediates/assets/release/mergeReleaseAssets
 find app/build -name index.android.bundle -delete
-env -u EXPO_PUBLIC_KINDMINDS_LITE -u KINDMINDS_LITE ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a -PrnllamaBuildFromSource=false
+env -u EXPO_PUBLIC_KINDMINDS_LITE -u KINDMINDS_LITE ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a
 
 # Lite arm64: delete the previous variant's JS bundle first.
 rm -rf app/build/generated/assets/createBundleReleaseJsAndAssets app/build/intermediates/assets/release/mergeReleaseAssets
@@ -507,16 +575,16 @@ npm run verify          # tsc --noEmit + unit tests
 Unit tests cover the mesh protocol, fragmentation, relay policy, rooms, DMs,
 location messages, file transfer and SHA-256 rejection, chat derivations, tile
 validation, coordinate/offline place search, route framing and fallback, map
-pan direction, SOS payloads, crisis routing, the model-answer pipeline
-(prompts, retrieval, validation, fallback reasons), the attribution and licence
-claim, and Devanagari tokenisation.
+pan direction, SOS payloads, crisis routing, the model-answer pipeline (prompts,
+retrieval, validation, fallback reasons, the deadline policy), the attribution
+and licence claim, and Devanagari tokenisation.
 
 The prompt and validator can be evaluated against the real model without the
 emulator:
 
 ```sh
-# terminal 1: a local build of llama.cpp new enough for Bonsai
-cd Temp/llama-b11556 && ./llama-server.exe -m ../bonsai.gguf -c 2048 -t 4 --port 8099 --no-webui
+# terminal 1: any recent upstream llama.cpp; this model needs nothing special
+cd Temp/llama-b11556 && ./llama-server.exe -m ../qwen2.5-1.5b-q4km.gguf -c 2048 -t 4 --port 8099 --no-webui
 
 # terminal 2: the app's exact prompts and validator, one line per query
 KM_SERVER=http://127.0.0.1:8099/v1/chat/completions \
@@ -533,36 +601,39 @@ output, and the validator verdict with its failure code, and can write JSON
 (`KM_JSON=…`) for a table. `cache_prompt` is disabled so prefill is measured the
 way the phone pays for it: the app re-processes the whole prompt on every answer.
 
-### Bonsai download and answer flow (emulator)
+### Download and answer flow on an Android runtime (emulator)
 
-Run this against a full `x86_64` **release** build on a 4 GB AVD, because loading
-the 2B model next to the running app needs the headroom:
+Run this against a full `x86_64` **release** build on a 4 GB AVD. It needs the
+headroom for a ~1 GB model plus its KV cache:
 
 ```sh
 cd android
-./gradlew app:assembleRelease -PreactNativeArchitectures=x86_64 -PrnllamaBuildFromSource=false
+./gradlew app:assembleRelease -PreactNativeArchitectures=x86_64
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-1. **Prepare → On-device models → Download Bonsai 2 2B.** The progress bar
+1. **Prepare → On-device models → Download Qwen2.5 1.5B.** The progress bar
    should start at the percentage already on disk, not at zero.
 2. Put the emulator in airplane mode mid-download. After three quick retries the
    card says the connection dropped and how many MB are saved; the `.part` file
    stays in `files/models`.
-3. Leave airplane mode on, close the app, reopen it and tap **Download
-   Bonsai 2 2B**. The transfer continues from those MB and finishes at
-   546,689,504 bytes, then the integrity row runs before the card says installed.
-4. **Assist → Heavy bleeding.** The card title, the retrieved source
-   (`bleeding`) and the mode that was routed are visible immediately; the answer
-   appears when generation finishes. On the emulator, generation does not finish
-   inside the deadline, so what you will actually see here is step 5 — that is
-   the honest result, not a bug in the install.
-5. The timeout path, which is what the emulator exercises: the card keeps the
-   approved record verbatim, adds *"The local model took too long on this phone,
-   so only the approved record is shown."*, and leaves the action available for
-   a retry. `logcat -s RNLlama:* ReactNativeJS:*` shows the context init, the
-   prompt being tokenised, and `Decoding Interrupted` when the deadline fires.
-
+3. Leave airplane mode on, close the app, reopen it and tap **Download Qwen2.5
+   1.5B**. The transfer continues from those MB and finishes at 986,048,768 bytes,
+   then the integrity row runs (long on an emulator: ~14 minutes for the chunked
+   SHA-256) before the card says installed and verified.
+4. **Assist → Heavy bleeding.** The card title and record appear immediately; the
+   answer appears when generation finishes. On this AVD that took ~98 s
+   (73.8 s prefill at 6.1 tok/s, then 60 tokens at 2.43 tok/s), so expect to
+   watch the progress row for a while.
+5. `logcat -s RNLlama:* ReactNativeJS:*` is the measurement tool: it shows
+   `Context initialized`, the prompt token count, and
+   `[KindMinds] inference timings { promptTokens, promptMs, prefillTps,
+   predictedTokens, decodeTps }` on success, or
+   `[KindMinds] answer not shown { reason: 'timeout' }` if the deadline wins.
+   `dumpsys meminfo org.kindminds.kit` gives the memory reading (1.17 GB PSS for
+   this model on the emulator).
+6. Removing the model, or the OS killing the app, must leave the record fallback
+   working: the assistant shows the approved record and never a partial answer.
 ## Two-phone mesh test
 
 The mesh has no servers: two phones have to find each other over Bluetooth LE.
@@ -601,18 +672,29 @@ workflow and reporting.
 ## Known limits
 
 - **No arm64 phone has run this build.** Real-device prefill/decode, the RAM
-  ceiling on 2–3 GB phones, thermal throttling, and flaky-4G download behaviour
+  ceiling on 2â€“3 GB phones, thermal throttling, and flaky-4G download behaviour
   are unmeasured. Every phone number in this repository is a target, not a
-  measurement.
+  measurement. The emulator needs 1.17 GB PSS for this model, so a 2 GB phone is
+  a genuine risk even though the weights are "only" 986 MB.
 - The emulator is a correctness harness, not a performance proxy: x86_64 has no
-  NEON, and Q2_0 prefill there is 1–2.5 tok/s.
-- The 20 s minimum deadline is a product target. On a slow phone the honest
-  outcome is the verbatim record, and the UI says so.
-- `UNSUPPORTED_SCORE = 2.6` and the vocabulary-overlap floors (0.45 REPHRASE /
-  0.30 others) are tuned heuristics: they decide "answers" vs "refuses", so any
-  change must be re-run through the eval harness.
-- Bonsai is a vision-language checkpoint; only its text path is wired, and the
-  `mmproj` is deliberately not downloaded.
+  NEON and takes 73.8 s of prefill for a prompt the host does in 3.6 s.
+- **Hindi (Devanagari) generation is unreliable** on this 1.5B model: the model
+  produces mangled Hindi or English, both of which the validator refuses, so the
+  user gets the approved (English) record. Hinglish is accepted, but the answer
+  is often plain English because a script check cannot tell them apart. Fixing
+  this needs reviewed Hindi translations served as records, not a bigger prompt.
+- The first answer on an unmeasured device may take up to the 120 s cap. That is
+  deliberate: a slower answer beats an abandoned one, and it is what lets the
+  device measure itself for later answers.
+- `UNSUPPORTED_SCORE = 2.6`, the vocabulary-overlap floors (0.45 REPHRASE / 0.30
+  others) and the record-scaled sentence allowances are tuned heuristics: they
+  decide "answers" vs "refuses", so any change must be re-run through the eval
+  harness and the four-mode batch.
+- Downloading and then hashing 986 MB is slow on weak hardware: ~4 minutes to
+  download and ~14 minutes to verify on the x86_64 emulator. The UI stays
+  responsive and says what it is doing, but it is not instant.
+- The 0.5B Qwen2.5 Instruct variant is the documented low-RAM alternative for
+  future work; there is no multi-model picker yet.
 - Two-phone BLE mesh testing is still required on physical hardware each time
   the transport changes; the emulator verifies advertising and that the GATT
   server compiles and starts.

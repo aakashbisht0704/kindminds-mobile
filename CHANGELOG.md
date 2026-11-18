@@ -8,15 +8,30 @@ semantic versioning once it reaches a stable release.
 
 ### Changed
 
-- On-device text model replaced with PrismML **Ternary Bonsai 2 2B**
-  (`Ternary-Bonsai-2-2B-Q2_0.gguf`, Apache-2.0), running on `llama.rn`
-  0.13.0-rc.12. The previous runtime could not execute the model's
-  Hadamard-rotated ternary weights.
-- Assistant prompts and validation updated for the text model's chat template.
+- On-device text model is now **Qwen2.5-1.5B-Instruct Q4_K_M** (Bartowski GGUF,
+  986,048,768 bytes, Apache-2.0), running on the stable `llama.rn` 0.12.9 and
+  stock upstream llama.cpp. No fork, no patches, no custom kernels.
+- The previous text model (PrismML Ternary Bonsai 2 2B) and the runtime pin it
+  needed are removed. Its Q2_0 weights are Hadamard-rotated, which made it both
+  slow (~10x slower than the current model at the same prompt size) and a
+  runtime dependency to maintain. A leftover Bonsai GGUF is no longer selected
+  as the text model.
+- Assistant prompts use the checkpoint's embedded ChatML template, stop at
+  `<|im_end|>`, and no longer carry thinking-mode flags.
+- The REPHRASE prompt asks for a numbered list, which is what makes a 1.5B model
+  keep every approved step (three runs, three complete answers).
+- The deadline policy gives the first answer on an unmeasured device the full
+  120 s cap instead of a conservative estimate, so slow hardware can still
+  answer and can then measure itself.
 - Bundled voice (Shruti) and vision (Mirage) models are unchanged.
 
 ### Fixed
 
+- Validator false rejections found by reading refused-but-correct answers:
+  numbered answers counted as too many sentences and their markers as invented
+  numbers; the sentence allowance did not scale with the record; step order
+  matched a later step to an earlier step's word; and CLARIFY answers that name
+  the step they explain were rejected as invented numbers. All four have tests.
 - Emulator text generation is stable; see the root README for the emulator
   timing caveat.
 

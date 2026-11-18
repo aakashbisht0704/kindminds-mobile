@@ -70,21 +70,19 @@ export type AssistantOutcome =
       sources: [];
     };
 
-/** Generation budget: short answers, and never a minute of spinning. */
 /**
  * Deadline policy.
  *
  * A fixed timeout is a guess, and a wrong guess is what makes a working model
- * look broken on a slow phone. The budget is therefore derived from the
- * prompt size and the throughput this device actually measured on its last
- * answer, with a floor and a cap so the card can never hang indefinitely.
- * MIN is the product target; the first answer on unknown hardware uses
- * CONSERVATIVE_SPEED, which is deliberately pessimistic for a 2B model on a
- * mid-range phone.
+ * look broken on a slow phone. The budget is therefore derived from the prompt
+ * size and the throughput this device actually measured on its last answer,
+ * with a floor and a cap so the card can never hang indefinitely. The first
+ * answer on an unmeasured device gets the cap instead of an estimate: being
+ * generous once is better than abandoning an answer that was about to arrive,
+ * and it is the only way the device ever gets to measure itself.
  */
 export const MIN_TIMEOUT_MS = 20_000;
 export const MAX_TIMEOUT_MS = 120_000;
-export const CONSERVATIVE_SPEED = { prefillTps: 25, decodeTps: 10 } as const;
 /** Rough characters-per-token for English prose; only used to size the budget. */
 const CHARS_PER_TOKEN = 4;
 
@@ -93,9 +91,25 @@ export function estimateTimeout(
   maxTokens: number,
   measured?: { prefillTps: number; decodeTps: number } | null,
 ): number {
-  const speed = measured && measured.prefillTps > 0 && measured.decodeTps > 0 ? measured : CONSERVATIVE_SPEED;
   const promptTokens = Math.ceil(promptChars / CHARS_PER_TOKEN);
-  const seconds = promptTokens / speed.prefillTps + maxTokens / speed.decodeTps;
+
+  /**
+   * First answer on an unmeasured device: spend the whole cap.
+   *
+   * The conservative defaults describe a mid-range phone, and when they are
+   * wrong about slow hardware they are wrong in the worst possible way: the
+   * answer is abandoned just before it would have arrived, and the device never
+   * gets to measure itself because the measurement only lands on a completed
+   * answer. Measured on the x86_64 emulator: a 450-token prompt was cut off at
+   * the 48 s conservative budget, which is under a minute of extra patience for
+   * an answer that does arrive. Only the first answer pays this; every later one
+   * uses this device's own rates.
+   */
+  if (!measured || measured.prefillTps <= 0 || measured.decodeTps <= 0) {
+    return MAX_TIMEOUT_MS;
+  }
+
+  const seconds = promptTokens / measured.prefillTps + maxTokens / measured.decodeTps;
   // 1.5x headroom: sampler variance and the first-token cost are real.
   const budget = seconds * 1500;
   return Math.round(Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, budget)));

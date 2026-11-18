@@ -2,14 +2,12 @@
  * Third-party attribution.
  *
  * The text model is Apache-2.0, so redistributing it (and the runtime that runs
- * it) requires shipping the licence and the publisher's NOTICE text with the
- * app and stating who wrote what. This module is the single source of that
- * statement; `notices/` holds the verbatim originals and
- * `src/core/ai/licences.generated.ts` is generated from them by
- * `bun scripts/build-notices.ts`.
+ * it) requires shipping the licence with the app and stating who wrote what.
+ * This module is the single source of that statement; `notices/` holds the
+ * verbatim originals and `src/core/ai/licences.generated.ts` is generated from
+ * them by `bun scripts/build-notices.ts`.
  *
- * Nothing here is decorative: three of five components are non-commercial-era
- * survivors of a model swap, and one of them used to forbid commercial use.
+ * Every component here is Apache-2.0 or MIT, which permits commercial use.
  */
 
 import { TEXT_MODEL, VISION_MODEL, VOICE_MODEL } from './model-facts';
@@ -24,7 +22,7 @@ export type Attribution = {
   licence: string;
   copyright: string;
   source: string;
-  /** The publisher's requested attribution sentence, verbatim when they gave one. */
+  /** The attribution sentence shown to the reader, when the publisher asked for one. */
   notice?: string;
   /** The redistribution obligations that apply to this component. */
   obligations: string;
@@ -32,32 +30,32 @@ export type Attribution = {
 
 export const ATTRIBUTIONS: readonly Attribution[] = [
   {
-    id: 'bonsai',
+    id: 'qwen2.5',
     role: 'Text model (downloaded by the user, not bundled)',
-    name: 'PrismML Ternary Bonsai 2 2B',
-    version: `Q2_0 GGUF · ${TEXT_MODEL.bytes.toLocaleString('en-US')} bytes · sha256 ${TEXT_MODEL.sha256}`,
+    name: 'Qwen2.5-1.5B-Instruct',
+    version: `Q4_K_M GGUF · ${TEXT_MODEL.bytes.toLocaleString('en-US')} bytes · sha256 ${TEXT_MODEL.sha256}`,
     licence: TEXT_MODEL.licence,
-    copyright: 'Copyright 2026-present Prism ML, Inc.',
+    copyright: 'Copyright 2024-present Alibaba Cloud',
     source: TEXT_MODEL.source,
-    notice: 'Created using Bonsai by Prism ML.',
+    notice: 'Quantised to GGUF by Bartowski.',
     obligations:
-      'Ship the Apache-2.0 licence and this NOTICE text. Commercial use is permitted; no separate licence is needed.',
+      'Ship the Apache-2.0 licence. Commercial use is permitted; no separate licence is needed.',
   },
   {
-    id: 'qwen',
-    role: 'Base model Bonsai 2 was distilled from',
-    name: 'Qwen3.5-2B',
-    version: '2B parameters, Apache-2.0',
+    id: 'qwen-upstream',
+    role: 'Upstream weights the GGUF was converted from',
+    name: 'Qwen/Qwen2.5-1.5B-Instruct',
+    version: '1.5B parameters, Apache-2.0',
     licence: 'Apache-2.0',
-    copyright: 'Copyright 2026 Alibaba Cloud',
-    source: 'https://huggingface.co/Qwen/Qwen3.5-2B',
-    obligations: 'Retained through the publisher NOTICE; ship the Apache-2.0 licence.',
+    copyright: 'Copyright 2024-present Alibaba Cloud',
+    source: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct',
+    obligations: 'Ship the Apache-2.0 licence.',
   },
   {
     id: 'llama-cpp',
     role: 'Inference engine that runs the GGUF on device',
     name: 'llama.cpp',
-    version: 'b12445 (commit ef3848f), shipped inside llama.rn 0.13.0-rc.12',
+    version: 'standard upstream build, shipped inside llama.rn 0.12.9 (no fork, no patches)',
     licence: 'MIT',
     copyright: 'Copyright (c) 2023-2026 The ggml authors',
     source: 'https://github.com/ggml-org/llama.cpp',
@@ -87,4 +85,4 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
 
 /** One sentence the About/Licences area shows before the list. */
 export const ATTRIBUTION_SUMMARY =
-  'KindMinds runs other people\u2019s models on your phone. They are Apache-2.0 (Bonsai, Shruti, Mirage) and MIT (llama.cpp), which permits commercial use, and their licences are reproduced in full below.';
+  'KindMinds runs other people\u2019s models on your phone. They are Apache-2.0 (Qwen2.5, Shruti, Mirage) and MIT (llama.cpp), which permits commercial use, and their licences are reproduced in full below.';

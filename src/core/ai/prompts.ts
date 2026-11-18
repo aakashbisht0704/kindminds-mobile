@@ -12,7 +12,7 @@
 
 import type { KnowledgeEntry } from '../knowledge';
 
-export const PROMPT_VERSION = 'km-assistant-2026-11-1';
+export const PROMPT_VERSION = 'km-assistant-2026-11-2';
 
 /** The four interaction shapes. One prompt per shape, never a generic one. */
 export type AssistantMode = 'REPHRASE' | 'QUESTION' | 'CLARIFY' | 'SITUATION';
@@ -62,7 +62,8 @@ const RULES = [
 const OUTPUT_RULES: Record<AssistantMode, string> = {
   REPHRASE:
     'TASK: Say the approved record in plainer words for a frightened person in a hurry. ' +
-    'One short imperative sentence per step, every step and warning kept.',
+    'Write a numbered list with one short imperative sentence per approved step, keeping the ' +
+    'same numbers and order, so no step is skipped. Keep every step and warning.',
   QUESTION:
     'TASK: Answer using only the approved records. Give the answering steps in order, unmerged. ' +
     '2-4 short sentences. If they do not answer, say so.',
@@ -140,12 +141,12 @@ export function buildUserPrompt(input: UserPromptInput): string {
 }
 
 /**
- * Terminators for the Qwen3.5 chat template that Bonsai is derived from. The
- * template itself is applied by llama.cpp (jinja), so these only stop a model
- * that tries to keep talking past the end of its own turn.
+ * End-of-turn marker for the ChatML template that Qwen2.5-Instruct embeds.
+ * llama.cpp applies the template itself (jinja), so this only stops a model
+ * that tries to keep talking past its own turn.
  */
 export function stopSequences(): string[] {
-  return ['<|im_end|>', '<|im_start|>', '<|endoftext|>'];
+  return ['<|im_end|>'];
 }
 
 export function maxTokensFor(mode: AssistantMode): number {
