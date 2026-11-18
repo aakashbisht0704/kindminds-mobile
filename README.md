@@ -344,19 +344,62 @@ rejected, a numbered list still cannot introduce a number the record does not
 contain, and the vocabulary, step-survival, language and unsafe-advice gates are
 untouched. Both have tests.
 
+### What the two outcomes look like on screen
+
+**Accepted.** Tapping **Heavy bleeding** on a device that answers in time shows a
+card with the record title, the model's answer, and the approved sources that
+produced it. From the measured host run above, the card reads:
+
+> **Severe bleeding** — sources: `bleeding` — QUESTION
+>
+> Put a cloth or clean pad directly on the wound and press down hard with both
+> hands. If blood soaks through, add another pad on top. Keep pressing for at
+> least 10 minutes before looking. If bleeding will not stop, press the artery
+> above the wound with a finger.
+>
+> *In plain words · from the approved record*
+
+**Timed out.** Captured on the x86_64 emulator (release APK, 119 MB, 4 GB AVD):
+the record card renders with its six numbered steps and its two red `Do not`
+warnings, and beneath them the card says, in the product's own words:
+
+> *The local model took too long on this phone, so only the approved record is
+> shown.*
+
+The **Say it in plain words** action stays available for a retry. The logcat
+trace for that capture is unambiguous about what happened: `RNLlama` loaded the
+546 MB file, initialised the context in ~12 s (file already in page cache),
+started `loadPrompt`, and then `nextToken: Decoding Interrupted` when the derived
+deadline expired after ~48 s, followed by
+`[KindMinds] answer not shown { mode: 'QUESTION', reason: 'timeout', failure: null }`.
+Nothing partial was shown, and the record was never replaced.
+
+That is the designed behaviour on hardware that is too slow, and it is also the
+honest warning about the 120 s cap: an x86_64 emulator is ~10× slower than a
+phone here, but a low-end phone with a cold model may still hit the cap. The
+screenshot is not committed, because this repository does not commit screenshots
+(see `docs/README.md`).
+
 ### Emulator caveat
 
-On Emulator B, loading the 546 MB Q2_0 file takes minutes and generation runs at
-roughly **1–2.5 tok/s prefill and 2–7 tok/s decode** (previously measured on the
-same AVD with the same build; not re-measured for the tables above). x86_64 has
-no NEON and the Q2_0 matmul is pathological there. The emulator is a correctness
-harness — it proves the model loads, generates and passes or fails the gates on
-a real Android runtime — and it is **not** a performance proxy for a phone.
+On Emulator B, the 546 MB Q2_0 file runs at roughly **1–2.5 tok/s prefill and
+2–7 tok/s decode**. x86_64 has no NEON and the Q2_0 matmul is pathological
+there, so a ~500-token prompt does not finish inside the app's 120 s cap: in the
+capture above the derived deadline (48 s for that prompt on unknown hardware)
+expired first. The emulator is a correctness harness — it proves the model
+loads, the prompt tokenises, decoding starts, and the safety/fallback path
+behaves on a real Android runtime — and it is **not** a performance proxy for a
+phone. It also cannot run Shruti or Mirage, because Cactus publishes no x86_64
+library.
 
 ### Not measured
 
 - arm64 phone prefill/decode, first-token latency, RAM ceiling on 2–3 GB
   devices, thermal throttling, battery cost.
+- **An accepted (non-fallback) answer in the app on any Android device.** On the
+  x86_64 emulator the deadline expires first, which is the correct outcome but
+  means the on-device accepted path is only proven by the host harness, which
+  uses the app's exact prompts and validator.
 - Download behaviour on a flaky mobile connection at 521 MB (the resume logic is
   covered by unit tests and by the map pack, not by a real 4G transfer).
 - Whether the derived deadline (20 s – 120 s) is generous enough on a slow
@@ -509,12 +552,16 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 3. Leave airplane mode on, close the app, reopen it and tap **Download
    Bonsai 2 2B**. The transfer continues from those MB and finishes at
    546,689,504 bytes, then the integrity row runs before the card says installed.
-4. **Assist → Heavy bleeding.** The answer card shows the model's answer with
-   its approved sources (`bleeding`) above it, and the mode label for the prompt
-   that produced it. On the emulator this takes minutes; see the benchmark caveat.
-5. Repeat with a short deadline to prove the fallback: the card keeps the
-   approved record verbatim and says the model could not phrase it in time, and
-   the next attempt still generates.
+4. **Assist → Heavy bleeding.** The card title, the retrieved source
+   (`bleeding`) and the mode that was routed are visible immediately; the answer
+   appears when generation finishes. On the emulator, generation does not finish
+   inside the deadline, so what you will actually see here is step 5 — that is
+   the honest result, not a bug in the install.
+5. The timeout path, which is what the emulator exercises: the card keeps the
+   approved record verbatim, adds *"The local model took too long on this phone,
+   so only the approved record is shown."*, and leaves the action available for
+   a retry. `logcat -s RNLlama:* ReactNativeJS:*` shows the context init, the
+   prompt being tokenised, and `Decoding Interrupted` when the deadline fires.
 
 ## Two-phone mesh test
 
