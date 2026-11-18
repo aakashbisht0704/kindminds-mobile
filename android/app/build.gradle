@@ -165,6 +165,10 @@ android {
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+        // The bundled text model is ~940 MiB and already incompressible. Storing
+        // it uncompressed keeps the build and the install fast, and lets
+        // AssetManager stream it instead of inflating a whole entry into memory.
+        noCompress 'gguf'
     }
 }
 

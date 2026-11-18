@@ -4,8 +4,8 @@
  * The full app leaves the factory with Shruti and Mirage already inside it, so
  * there is no voice/vision download in the field. This screen explains the
  * actual product, asks for a fresh GPS fix, downloads the local map, and copies
- * the included models into app storage. The text model is deliberately not here: it is a
- * 986 MB optional download from Prepare.
+ * the included models into app storage, including the text model when this
+ * build carries it.
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -41,7 +41,7 @@ const SLIDES = [
   },
   {
     title: 'Ready before the network goes.',
-    body: 'Shruti and Mirage are already in this app. Add the Qwen2.5 text model later if you want answers in your own words.',
+    body: 'Shruti, Mirage and the Qwen2.5 text model are already inside this app. It answers from the approved records with no connection.',
     preview: 'ready' as const,
   },
 ] as const;
@@ -217,7 +217,7 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
             <Text style={styles.note}>
               {KINDMINDS_LITE
                 ? 'This build uses approved records without on-device models.'
-                : 'Qwen2.5 1.5B, the text model, can be downloaded later from Prepare.'}
+                : 'Qwen2.5 1.5B is copied out of this app on first use. No download is needed.'}
             </Text>
 
             {setup === 'running' || setup === 'done' ? (
@@ -420,7 +420,7 @@ function SlidePreview({ kind }: { kind: 'map' | 'chat' | 'assist' | 'ready' }) {
       <ReadyLine title="Shruti" detail="Voice input" />
       <ReadyLine title="Mirage" detail="Photo descriptions" />
       <View style={styles.readyDivider} />
-      <Text style={styles.readyFootnote}>Qwen2.5 1.5B is optional and can be added later.</Text>
+      <Text style={styles.readyFootnote}>Qwen2.5 1.5B is included and needs no download.</Text>
     </View>
   );
 }

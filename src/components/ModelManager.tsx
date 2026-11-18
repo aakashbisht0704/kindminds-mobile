@@ -13,7 +13,7 @@ import { ActionButton, AppText, Card, ProgressBar } from './ui';
 import { releaseLocalModels } from '../services/local-ai';
 import { downloadModel, MODEL_URLS } from '../services/downloads';
 import { deleteModel, formatModelSize } from '../services/model-pack';
-import { BUNDLED_BYTES, installBundledModels } from '../services/bundled-models';
+import { BUNDLED_BYTES, BUNDLED_TEXT_MODEL, installBundledModels } from '../services/bundled-models';
 import { useModels, notifyModelsChanged } from '../state/useModels';
 import { KINDMINDS_LITE } from '../config';
 import { palette, space, type } from '../theme';
@@ -37,7 +37,7 @@ export function ModelManager() {
     try {
       await installBundledModels((fraction) => setIncludedProgress(fraction));
       notifyModelsChanged();
-      setNotice('Shruti and Mirage are ready on this phone.');
+      setNotice('The included models are ready on this phone.');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'The included models could not be installed.');
     } finally {
@@ -110,11 +110,11 @@ export function ModelManager() {
     );
   }
 
-  const includedMissing = !models.voice || !models.vision;
+  const includedMissing = !models.voice || !models.vision || (BUNDLED_TEXT_MODEL && !models.text);
 
   return (
     <View style={styles.wrap}>
-      <AppText variant="title">Shruti + Mirage</AppText>
+      <AppText variant="title">Included models</AppText>
       <AppText variant="caption" color={palette.inkMuted}>
         Included with this app. Nothing is downloaded in the field and nothing leaves this phone.
       </AppText>
@@ -132,11 +132,23 @@ export function ModelManager() {
           installed={Boolean(models.vision)}
           size={MODEL_URLS.vision.bytes}
         />
+        {BUNDLED_TEXT_MODEL ? (
+          <ModelRow
+            title="Qwen2.5 1.5B"
+            detail="Answers from the approved records · English, Hinglish"
+            installed={Boolean(models.text)}
+            size={MODEL_URLS.text.bytes}
+          />
+        ) : null}
         {includedMissing ? (
           <>
             {installingIncluded ? <ProgressBar ratio={includedProgress} severity="safe" /> : null}
             <ActionButton
-              label={installingIncluded ? 'Installing included models' : 'Install included models'}
+              label={
+                installingIncluded
+                  ? `Installing included models ${Math.round(includedProgress * 100)}%`
+                  : 'Install included models'
+              }
               tone="soft"
               busy={installingIncluded}
               onPress={() => void installIncluded()}
@@ -162,8 +174,8 @@ export function ModelManager() {
 
       <AppText variant="title" style={styles.textTitle}>Qwen2.5 1.5B</AppText>
       <AppText variant="caption" color={palette.inkMuted}>
-        Optional. Reads the approved records and explains or answers them in English, Hindi or
-        Hinglish. It is not a doctor and cannot add advice of its own.
+        Reads the approved records and explains or answers them. It is not a doctor and cannot add
+        advice of its own.
       </AppText>
 
       <Card style={styles.card}>
@@ -172,39 +184,63 @@ export function ModelManager() {
             <Text style={styles.textDetail}>
               {models.text
                 ? `${models.text.name} · ${formatModelSize(models.text.sizeBytes)}`
-                : '986 MB download · Apache-2.0 · Qwen2.5-1.5B-Instruct'}
+                : BUNDLED_TEXT_MODEL
+                  ? '986 MB · included in this app · Apache-2.0'
+                  : '986 MB download · Apache-2.0 · Qwen2.5-1.5B-Instruct'}
             </Text>
             <Text style={styles.textHint}>
               {models.text
-                ? 'Installed, integrity-checked and ready.'
-                : 'Download before an emergency, while you still have a connection.'}
+                ? 'Installed and ready. Nothing leaves this phone.'
+                : BUNDLED_TEXT_MODEL
+                  ? 'Copy it out of the app once, then it works with no connection at all.'
+                  : 'Download before an emergency, while you still have a connection.'}
             </Text>
           </View>
           <Text style={[styles.status, { color: models.text ? palette.safe : palette.inkMuted }]}>
-            {models.text ? 'Installed' : 'Optional'}
+            {models.text ? 'Installed' : BUNDLED_TEXT_MODEL ? 'Included' : 'Optional'}
           </Text>
         </View>
 
-        {textDownloading && verifying ? (
-          <ProgressBar ratio={verifyProgress} severity="safe" />
-        ) : textDownloading ? (
-          <ProgressBar ratio={textProgress} severity="safe" />
-        ) : null}
-        <ActionButton
-          label={
-            textDownloading && verifying
-              ? `Checking model integrity ${Math.round(verifyProgress * 100)}%`
-              : textDownloading
-                ? `Downloading Qwen2.5 ${Math.round(textProgress * 100)}%`
-              : models.text
-                ? 'Qwen2.5 is installed'
-                : 'Download Qwen2.5 1.5B'
-          }
-          tone={models.text ? 'soft' : 'primary'}
-          busy={textDownloading}
-          disabled={Boolean(models.text)}
-          onPress={() => void installTextModel()}
-        />
+        {BUNDLED_TEXT_MODEL ? (
+          models.text ? (
+            <ActionButton
+              label="Qwen2.5 is installed"
+              tone="soft"
+              disabled
+              onPress={() => undefined}
+            />
+          ) : (
+            <ActionButton
+              label={installingIncluded ? 'Installing Qwen2.5' : 'Install Qwen2.5 from this app'}
+              tone="primary"
+              busy={installingIncluded}
+              onPress={() => void installIncluded()}
+            />
+          )
+        ) : (
+          <>
+            {textDownloading && verifying ? (
+              <ProgressBar ratio={verifyProgress} severity="safe" />
+            ) : textDownloading ? (
+              <ProgressBar ratio={textProgress} severity="safe" />
+            ) : null}
+            <ActionButton
+              label={
+                textDownloading && verifying
+                  ? `Checking model integrity ${Math.round(verifyProgress * 100)}%`
+                  : textDownloading
+                    ? `Downloading Qwen2.5 ${Math.round(textProgress * 100)}%`
+                    : models.text
+                      ? 'Qwen2.5 is installed'
+                      : 'Download Qwen2.5 1.5B'
+              }
+              tone={models.text ? 'soft' : 'primary'}
+              busy={textDownloading}
+              disabled={Boolean(models.text)}
+              onPress={() => void installTextModel()}
+            />
+          </>
+        )}
         {models.text ? (
           <ActionButton label="Remove Qwen2.5" tone="ghost" disabled={busy !== null} onPress={() => void remove('text')} />
         ) : null}

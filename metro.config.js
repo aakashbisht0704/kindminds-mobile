@@ -2,11 +2,14 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
-// Shruti and Mirage use the Cactus `.cact` container. Metro only packages
-// explicitly registered asset extensions, so add it before the asset registry
-// is built.
+// Shruti and Mirage use the Cactus `.cact` container, and the bundled build
+// carries the text model as a `.gguf`. Metro only packages explicitly
+// registered asset extensions, so add both before the asset registry is built.
 if (!config.resolver.assetExts.includes('cact')) {
   config.resolver.assetExts.push('cact');
+}
+if (!config.resolver.assetExts.includes('gguf')) {
+  config.resolver.assetExts.push('gguf');
 }
 
 // The lite build must not carry 50 MB of model weights it cannot run. The

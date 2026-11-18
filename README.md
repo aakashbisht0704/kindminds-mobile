@@ -35,18 +35,54 @@ assistant surfaces. The last slide installs:
 | Local area map | on | ~8 MB | bounded MBTiles pack, z8–15 + overzoom |
 | Shruti voice input | included | 28 MB | `udgamlabs/Shruti` (`shruti.cact`) |
 | Mirage vision | included | 21 MB | `Cactus-Compute/mirage` (`mirage.cact`) |
-| Qwen2.5 text | later | 986 MB | `bartowski/Qwen2.5-1.5B-Instruct-GGUF` (`Q4_K_M`) |
+| Qwen2.5 text | included | 986 MB | `bartowski/Qwen2.5-1.5B-Instruct-GGUF` (`Q4_K_M`) |
 
-Shruti and Mirage are packaged inside the full APK; onboarding copies them into
-app storage, so they do not need a connection. The text model is deliberately
-absent from the APK: it is an optional download from **Prepare → On-device
-models**. Shruti and Mirage run through the official **Cactus 4.1** engine,
-linked into the app's native library
-(`android/app/src/main/cpp/cactus_bridge.cpp`), because the
-`cactus-react-native` wrapper does not implement the Whistle (Shruti) or Mirage
-architectures. The text model runs through `llama.rn` with the checkpoint's own
-ChatML template. Downloads are atomic: an interrupted install never destroys a
-working model or map.
+## Two builds: bundled and downloadable
+
+The same source produces two full builds. They differ only in whether the text
+model travels inside the APK.
+
+| Build | APK size | Text model | First launch |
+| --- | ---: | --- | --- |
+| **Bundled** (`assets/models/*.gguf` present) | ~1.09 GB | inside the APK | copied out of the APK, no network at all |
+| **Download** (no `.gguf` in `assets/models/`) | ~98 MB | optional download | user taps **Download Qwen2.5 1.5B** while online |
+
+The bundled build is the one to sideload onto a phone that may never see a
+network or an app store: install it, open it, and the assistant answers. The
+download build is the one to ship through a store, where a 1 GB APK is a
+problem and a resumable download is not.
+
+Everything below applies to both. Shruti and Mirage are always included.
+
+Shruti and Mirage run through the official **Cactus 4.1** engine, linked into
+the app's native library (`android/app/src/main/cpp/cactus_bridge.cpp`), because
+the `cactus-react-native` wrapper does not implement the Whistle (Shruti) or
+Mirage architectures. The text model runs through `llama.rn` with the
+checkpoint's own ChatML template. Every install path is atomic: an interrupted
+copy or download never destroys a working model or map.
+
+### Why the model is not a Metro asset
+
+`require()` cannot carry it. Metro's asset transform reads the file into a Node
+string, and Node caps strings at 512 MiB (`Cannot create a string longer than
+0x1fffffe8 characters`), so a 986 MB `require()` fails the bundle step outright.
+
+The bundled build therefore places the GGUF in
+`android/app/src/main/assets/models/` and streams it out through the native
+`ModelAsset` module (`ModelAssetModule.kt`) into the same model directory the
+downloader uses. The asset is stored uncompressed (`androidResources {
+noCompress 'gguf' }`) so AssetManager streams instead of inflating a gigabyte
+into RAM, and the copy is written to `<name>.part`, size-checked, then renamed.
+
+Build it with the file present:
+
+```sh
+cp <the-gguf> android/app/src/main/assets/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+cd android && ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a
+```
+
+Without that file the build still succeeds and produces the download variant.
+`assets/models/*.gguf` is gitignored, so a checkout never commits a gigabyte.
 
 ## The text model: Qwen2.5-1.5B-Instruct Q4_K_M
 
