@@ -52,8 +52,8 @@ type Message = {
   confident?: boolean;
   actions?: ActionKind[];
   query?: string;
-  /** Model phrasing of the approved record, plus where it came from. */
-  model?: { text: string; mode: AssistantMode; sources: string[] };
+  /** The model's answer, when one passed validation. */
+  model?: { text: string; mode: AssistantMode; sources: string[]; elapsedMs: number };
   /** Why no model phrasing is shown, in one plain sentence. */
   modelNote?: string;
   photo?: string;
@@ -78,20 +78,33 @@ function messageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-const MODEL_LABELS: Record<AssistantMode, string> = {
+/**
+ * How the model's answer relates to what is on screen. The answer itself is the
+ * assistant's bubble now; this line only says where it came from, because a
+ * person deserves to know whether words were written here or quoted.
+ */
+const MODE_CAPTIONS: Record<AssistantMode, string> = {
   REPHRASE: 'In plain words',
-  QUESTION: 'From the approved records',
+  QUESTION: 'Answered from the approved record',
   CLARIFY: 'About that step',
   SITUATION: 'What applies here',
 };
 
+/** "Written on this phone in 12 s" — proof it ran, not a canned string. */
+function provenanceLine(model: { mode: AssistantMode; elapsedMs: number }): string {
+  const seconds = Math.max(1, Math.round(model.elapsedMs / 1000));
+  return `${MODE_CAPTIONS[model.mode]} · written on this phone in ${seconds} s`;
+}
+
 /** One sentence explaining why only the approved record is on screen. */
-function fallbackNote(reason?: FallbackReason): string {
+function fallbackNote(reason?: FallbackReason, installed = true): string {
   if (reason === 'timeout') {
     return 'The local model took too long on this phone, so only the approved record is shown.';
   }
   if (reason === 'no_model') {
-    return 'The text model is not installed, so only the approved record is shown.';
+    return installed
+      ? 'The text model is installed but could not start on this phone, so only the approved record is shown.'
+      : 'The text model is not installed, so only the approved record is shown.';
   }
   return 'The local model’s answer did not stay within the approved record, so only the record is shown.';
 }
@@ -149,7 +162,7 @@ export function AssistantScreen({
     ]);
     setThinking(true);
     try {
-      const response = await buildResponse(text, kitPacked);
+      const response = await buildResponse(text, kitPacked, Boolean(models.text));
       setMessages((current) => [...current, response]);
     } finally {
       setThinking(false);
@@ -170,12 +183,18 @@ export function AssistantScreen({
         if (outcome.kind === 'answer') {
           return {
             ...candidate,
-            model: { text: outcome.text, mode: outcome.mode, sources: outcome.sources.map((source) => source.title) },
+            text: outcome.text,
+            model: {
+              text: outcome.text,
+              mode: outcome.mode,
+              sources: outcome.sources.map((source) => source.title),
+              elapsedMs: outcome.elapsedMs,
+            },
           };
         }
         return {
           ...candidate,
-          modelNote: fallbackNote(outcome.kind === 'fallback' ? outcome.reason : undefined),
+          modelNote: fallbackNote(outcome.kind === 'fallback' ? outcome.reason : undefined, Boolean(models.text)),
         };
       }),
     );
@@ -302,7 +321,11 @@ export function AssistantScreen({
   );
 }
 
-async function buildResponse(text: string, packed: Record<string, boolean>): Promise<Message> {
+async function buildResponse(
+  text: string,
+  packed: Record<string, boolean>,
+  textModelInstalled: boolean,
+): Promise<Message> {
   const lower = text.toLowerCase();
   const assessment = assessQuery(text);
 
@@ -423,9 +446,28 @@ async function buildResponse(text: string, packed: Record<string, boolean>): Pro
       query: text,
     };
   }
-  // The record card is complete on its own; the model may add a plain-language
-  // answer on top, and its output is validated against these same records.
+  // The model's answer is the assistant's reply. The approved record it came
+  // from stays on screen beneath it, so the reader always has the reviewed
+  // wording and can see exactly what the answer was built from.
   const layered = await assistQuery(text, { sourceId: result.primary.id });
+  if (layered.kind === 'answer') {
+    return {
+      id: messageId(),
+      role: 'assistant',
+      kind: 'answer',
+      text: layered.text,
+      entry: result.primary,
+      sources: result.sources,
+      confident: result.confident,
+      query: text,
+      model: {
+        text: layered.text,
+        mode: layered.mode,
+        sources: layered.sources.map((source) => source.title),
+        elapsedMs: layered.elapsedMs,
+      },
+    };
+  }
   return {
     id: messageId(),
     role: 'assistant',
@@ -437,15 +479,7 @@ async function buildResponse(text: string, packed: Record<string, boolean>): Pro
     sources: result.sources,
     confident: result.confident,
     query: text,
-    model:
-      layered.kind === 'answer'
-        ? {
-            text: layered.text,
-            mode: layered.mode,
-            sources: layered.sources.map((source) => source.title),
-          }
-        : undefined,
-    modelNote: layered.kind === 'fallback' ? fallbackNote(layered.reason) : undefined,
+    modelNote: fallbackNote(layered.kind === 'fallback' ? layered.reason : undefined, textModelInstalled),
   };
 }
 
@@ -543,7 +577,13 @@ function MessageView({
     return (
       <View style={styles.assistantMessage}>
         <Text style={styles.assistantText}>{message.text}</Text>
+        {message.model ? (
+          <Text style={styles.provenance}>{provenanceLine(message.model)}</Text>
+        ) : null}
         <View style={styles.answerCard}>
+          <Text style={styles.cardKicker}>
+            {message.model ? 'Approved record this answer came from' : 'Approved record'}
+          </Text>
           <Text style={styles.answerTitle}>{message.entry.title}</Text>
           <Text style={styles.answerSummary}>{message.entry.summary}</Text>
           {message.entry.steps.map((step, index) => (
@@ -555,15 +595,6 @@ function MessageView({
           {message.entry.never.map((rule) => (
             <Text key={rule} style={styles.never}>{rule}</Text>
           ))}
-          {message.model ? (
-            <View style={styles.modelText}>
-              <Text style={styles.modelLabel}>{MODEL_LABELS[message.model.mode]}</Text>
-              <Text style={styles.answerSummary}>{message.model.text}</Text>
-              {message.model.sources.length > 1 ? (
-                <Text style={styles.modelSources}>{`Approved sources: ${message.model.sources.join(' · ')}`}</Text>
-              ) : null}
-            </View>
-          ) : null}
           {!message.model && message.modelNote ? (
             <Text style={styles.modelNote}>{message.modelNote}</Text>
           ) : null}
@@ -764,8 +795,18 @@ const styles = StyleSheet.create({
     borderTopColor: palette.line,
   },
   modelSources: { color: palette.inkMuted, fontSize: 11, lineHeight: 16 },
-  modelNote: { color: palette.inkMuted, fontSize: 12, lineHeight: 17, fontStyle: 'italic' },
+  modelNote: { color: palette.hazard, fontSize: 12, lineHeight: 17, fontStyle: 'italic' },
   modelLabel: { color: palette.safe, fontSize: 12, fontWeight: '700' },
+  /** Where the answer came from: mode plus the time it actually took. */
+  provenance: { color: palette.safe, fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  /** Small heading above the record inside the card. */
+  cardKicker: {
+    color: palette.inkMuted,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
   messageActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, paddingTop: space.xs },
   textAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: space.xs },
   textActionLabel: { color: palette.accent, fontSize: 13, fontWeight: '600' },

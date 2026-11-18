@@ -45,6 +45,8 @@ export type AssistantOutcome =
       language: AnswerLanguage;
       text: string;
       provenance: 'model';
+      /** Wall-clock time this answer took on this device, for the UI to show. */
+      elapsedMs: number;
       primary: KnowledgeEntry;
       sources: KnowledgeEntry[];
     }
@@ -269,7 +271,17 @@ export async function runAssistant(
     // The failure code is a non-sensitive diagnostic; the user's words are not
     // logged with it.
     console.warn('[KindMinds] answer not shown', { mode, reason, failure: detail ?? null });
-    return { kind: 'fallback', mode, language, text: '', provenance: 'record', reason, detail, primary, sources };
+    return {
+      kind: 'fallback',
+      mode,
+      language,
+      text: '',
+      provenance: 'record',
+      reason,
+      detail,
+      primary,
+      sources,
+    };
   };
 
   if (!backend) return toFallback('no_model');
@@ -279,6 +291,7 @@ export async function runAssistant(
     options.timeoutMs ??
     estimateTimeout(system.length + user.length, maxTokens, backend.speed?.() ?? null);
 
+  const startedAt = Date.now();
   const { text, timedOut } = await generateText(backend, {
     messages: [
       { role: 'system', content: system },
@@ -305,6 +318,7 @@ export async function runAssistant(
     language,
     text: validated.text,
     provenance: 'model',
+    elapsedMs: Date.now() - startedAt,
     primary,
     sources,
   };

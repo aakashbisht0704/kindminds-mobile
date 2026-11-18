@@ -175,14 +175,20 @@ export function maxSentencesFor(mode: AssistantMode): number {
   }
 }
 
-/** Deterministic same-language message when nothing approved matches. */
+/**
+ * Deterministic same-language message when nothing approved matches.
+ *
+ * A flat "I don't know" reads as a broken assistant. The records are fixed, so
+ * the honest and useful thing is to say what they *do* cover and how to ask
+ * again, and to point at SOS for anyone in danger.
+ */
 export function unsupportedMessage(language: AnswerLanguage): string {
   switch (language) {
     case 'hi':
-      return 'इस सवाल के लिए मंज़ूर किए गए ऑफ़लाइन ज्ञान में पर्याप्त जानकारी नहीं है। मैं अंदाज़ा नहीं लगाऊँगा। अगर कोई ख़तरे में है तो SOS दबाइए और आस-पास के लोगों को बुलाइए।';
+      return 'मंज़ूर किए गए रिकॉर्ड में यह सवाल नहीं है, इसलिए मैं अंदाज़ा नहीं लगाऊँगा। रिकॉर्ड में खून बहना, जलना, साँस रुकना, गला घुटना, लू, ठंड, पानी, खाना, आश्रय, आग, बाढ़, भूकंप और घबराहट शामिल है। इनमें से कुछ पूछिए, या ख़तरे में किसी के लिए SOS दबाइए।';
     case 'hinglish':
-      return 'Is sawaal ke liye approved offline gyaan mein poori jaankari nahi hai. Main andaaza nahi lagaunga. Agar koi khatre mein hai to SOS dabaiye aur aas-paas ke logon ko bulaiye.';
+      return 'Approved records mein ye sawaal nahi hai, isliye main andaaza nahi lagaunga. Records mein khoon behna, jalna, saans rukna, gala ghutna, loo, thand, paani, khana, aashray, aag, baadh, bhoomkamp aur ghabrahat shaamil hai. Inme se kuch poochhiye, ya khatre mein kisi ke liye SOS dabaiye.';
     default:
-      return 'The approved offline knowledge base does not contain enough information for that question, so I will not guess. If someone is in danger, use SOS and call for people nearby.';
+      return 'The approved records do not cover that, so I will not guess. They do cover bleeding, burns, CPR and choking, heat and cold, water and food, shelter, fire, flood, earthquake, cyclone, and panic. Ask about one of those, or open SOS if someone is in danger.';
   }
 }

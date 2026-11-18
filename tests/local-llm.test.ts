@@ -156,6 +156,22 @@ describe('validation', () => {
     if (!outcome.ok) expect(outcome.failure).toBe('empty');
   });
 
+  // Measured against the online model: the prompt requires the approved warnings
+  // to be kept, and the bleeding record's two `never` rules are rendered into the
+  // prompt like its steps. Counting only steps rejected a reply that kept all six
+  // steps and both warnings, because the model also named the record on a lead
+  // line. The sentence ceiling has to cover the warnings it is asked to keep.
+  test('accepts a reply that keeps every step and every approved warning', () => {
+    const withWarnings = [
+      `Severe bleeding`,
+      GOOD_ANSWER,
+      ...bleeding.never.map((rule) => `- ${rule}`),
+    ].join('\n');
+
+    const outcome = validate(withWarnings);
+    expect(outcome.ok).toBe(true);
+  });
+
   // Measured false rejection: the model numbered its steps, the sentence counter
   // counted each "1." as a sentence, and two good in-app answers were thrown
   // away. List markers are formatting and must not count as sentences.
@@ -270,7 +286,35 @@ describe('assistant outcomes', () => {
     expect(outcome.kind).toBe('unsupported');
     if (outcome.kind === 'unsupported') {
       expect(outcome.provenance).toBe('none');
-      expect(outcome.text).toContain('does not contain enough information');
+      // The refusal still refuses, but it names what the records do cover so the
+      // person has somewhere to go instead of a dead end.
+      expect(outcome.text).toContain('will not guess');
+      expect(outcome.text).toContain('bleeding');
+      expect(outcome.text).toContain('SOS');
+      // Nothing generated is shown when retrieval found no record.
+      expect(outcome.text).not.toContain('clean pad');
+    }
+  });
+
+  test('everyday words still reach the right record', () => {
+    // People do not type the knowledge base's vocabulary; these all refused
+    // before prefix matching and the synonym table existed.
+    const cases: [string, string][] = [
+      ['I am thirsty', 'water'],
+      ['my hand is cut', 'bleeding'],
+      ['someone fainted', 'shock'],
+      ['I am hungry', 'food'],
+      ['my kid is scared', 'children'],
+      ['trapped in rubble', 'earthquake'],
+      ['phone is dying', 'power'],
+    ];
+    for (const [query, expected] of cases) {
+      const plan = planAssistantRequest(query, {});
+      expect(plan.kind).toBe('planned');
+      if (plan.kind === 'planned') {
+        const ids: string[] = plan.sources.map((entry) => entry.id);
+        expect(ids).toContain(expected);
+      }
     }
   });
 });

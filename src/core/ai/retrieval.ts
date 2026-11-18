@@ -152,8 +152,35 @@ function idf(term: string, docCount: number): number {
   return Math.log(1 + (docCount - df + 0.5) / (df + 0.5));
 }
 
+/**
+ * Fuzzy fallback for a query term that matched nothing exactly.
+ *
+ * People do not type the knowledge base's vocabulary: "thirsty" against the
+ * `thirst` keyword, "bleeding" against `bleed`, "cut" against `cuts`. Exact
+ * stemmed matching refused those questions outright, which reads as an assistant
+ * that cannot answer anything. A shared 4-character prefix is a conservative
+ * approximation: long enough to avoid noise, short enough to catch inflections
+ * and gerunds.
+ */
+const APPROX_MIN_PREFIX = 4;
+const APPROX_WEIGHT = 0.7;
+
+function approxTerm(doc: IndexedDoc, term: string): { field: keyof typeof FIELD_WEIGHT; hit: string } | null {
+  if (term.length < APPROX_MIN_PREFIX) return null;
+  for (const fieldName of Object.keys(FIELD_WEIGHT) as (keyof typeof FIELD_WEIGHT)[]) {
+    for (const candidate of doc.fields[fieldName].terms.keys()) {
+      if (candidate.length < APPROX_MIN_PREFIX) continue;
+      const shorter = Math.min(candidate.length, term.length);
+      let shared = 0;
+      while (shared < shorter && candidate[shared] === term[shared]) shared += 1;
+      if (shared >= APPROX_MIN_PREFIX) return { field: fieldName, hit: candidate };
+    }
+  }
+  return null;
+}
+
 export function search(query: string, limit = 3): SearchHit[] {
-  const queryTerms = [...new Set(tokenize(query))];
+  const queryTerms = expandTerms([...new Set(tokenize(query))]);
   if (queryTerms.length === 0) return [];
 
   const docCount = INDEX.docs.length;
@@ -162,9 +189,11 @@ export function search(query: string, limit = 3): SearchHit[] {
   for (const doc of INDEX.docs) {
     let score = 0;
     const matched = new Set<string>();
+    const norm = 1 - B + B * (doc.totalLength / INDEX.avgLength);
 
     for (const term of queryTerms) {
       const weight = idf(term, docCount);
+      let exact = false;
       for (const [fieldName, weightValue] of Object.entries(FIELD_WEIGHT) as [
         keyof typeof FIELD_WEIGHT,
         number,
@@ -172,10 +201,22 @@ export function search(query: string, limit = 3): SearchHit[] {
         const field = doc.fields[fieldName];
         const tf = field.terms.get(term);
         if (!tf) continue;
+        exact = true;
         matched.add(term);
-        const norm = 1 - B + B * (doc.totalLength / INDEX.avgLength);
         score += weightValue * weight * ((tf * (K1 + 1)) / (tf + K1 * norm));
       }
+
+      if (exact) continue;
+      // No exact hit anywhere in this document: try the prefix approximation so
+      // an obvious inflection still reaches the model instead of a refusal.
+      const approx = approxTerm(doc, term);
+      if (!approx) continue;
+      matched.add(term);
+      score +=
+        FIELD_WEIGHT[approx.field] *
+        idf(approx.hit, docCount) *
+        APPROX_WEIGHT *
+        ((1 * (K1 + 1)) / (1 + K1 * norm));
     }
 
     if (score <= 0) continue;
@@ -219,8 +260,80 @@ export function answer(query: string): AssistantAnswer | null {
   };
 }
 
-/** Suggested quick actions, ordered by how often they are needed in the first hour. */
-export const QUICK_PROMPTS: readonly { label: string; query: string }[] = [
+/**
+ * Words people use that the records do not.
+ *
+ * The knowledge base is written in clinical, compact English ("haemorrhage" is
+ * not in it, but "bleed" is). A frightened person types "cut", "gash", "wound".
+ * These map everyday words onto the vocabulary the index actually holds, so the
+ * question reaches the right record instead of being refused. They are routing
+ * hints only: no fact is added, and the validator still checks every sentence
+ * against the record text.
+ */
+const QUERY_SYNONYMS: Record<string, readonly string[]> = {
+  cut: ['bleed', 'wound'],
+  cuts: ['bleed', 'wound'],
+  gash: ['bleed', 'wound'],
+  wound: ['bleed'],
+  bleeding: ['bleed'],
+  blood: ['bleed'],
+  hurt: ['pain', 'injury'],
+  hurts: ['pain', 'injury'],
+  pain: ['injury'],
+  ache: ['pain', 'injury'],
+  broken: ['fracture'],
+  break: ['fracture'],
+  snapped: ['fracture'],
+  dizzy: ['faint', 'shock'],
+  fainted: ['faint', 'shock'],
+  unconscious: ['breathing', 'cpr'],
+  collapsed: ['breathing', 'cpr'],
+  choke: ['choking'],
+  choked: ['choking'],
+  gagging: ['choking'],
+  freezing: ['cold', 'hypothermia'],
+  shivering: ['cold', 'hypothermia'],
+  wet: ['hypothermia'],
+  hot: ['heat', 'sun'],
+  heatstroke: ['heat'],
+  sunstroke: ['heat'],
+  starving: ['food', 'hunger'],
+  hungry: ['food'],
+  dehydrated: ['water', 'thirst'],
+  thirsty: ['water', 'thirst'],
+  water: ['drink'],
+  scared: ['fear', 'panic'],
+  afraid: ['fear', 'panic'],
+  terrified: ['fear', 'panic'],
+  shaking: ['panic'],
+  trapped: ['rubble', 'earthquake'],
+  rubble: ['earthquake'],
+  storm: ['cyclone', 'wind'],
+  hurricane: ['cyclone'],
+  tornado: ['cyclone'],
+  phone: ['signal', 'battery'],
+  battery: ['power', 'charge'],
+  fire: ['burn'],
+  burned: ['burn'],
+  burnt: ['burn'],
+  infant: ['baby', 'child'],
+  kid: ['child'],
+  kids: ['children'],
+  baby: ['child', 'children'],
+};
+
+function expandTerms(terms: readonly string[]): string[] {
+  const expanded = new Set(terms);
+  for (const term of terms) {
+    for (const synonym of QUERY_SYNONYMS[term] ?? []) {
+      // Synonyms are stored as plain words; stem them like the index does.
+      for (const piece of tokenize(synonym)) expanded.add(piece);
+    }
+  }
+  return [...expanded];
+}
+
+/** Suggested quick actions, ordered by how often they are needed in the first hour. */export const QUICK_PROMPTS: readonly { label: string; query: string }[] = [
   { label: 'Someone is bleeding badly', query: 'severe bleeding pressure' },
   { label: 'Not breathing', query: 'not breathing cpr' },
   { label: 'How do I make water safe?', query: 'safe drinking water boil' },
